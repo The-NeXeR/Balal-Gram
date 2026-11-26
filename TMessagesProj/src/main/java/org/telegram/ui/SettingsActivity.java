@@ -36,6 +36,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -124,9 +125,11 @@ import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Components.ShareAlert;
 import org.telegram.ui.Components.SizeNotifierFrameLayout;
 import org.telegram.ui.Components.TextHelper;
+import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
+import org.telegram.ui.Components.spoilers.SpoilersTextView;
 import org.telegram.utils.glass.source.GlassSourceRenderNode;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Stars.StarsController;
@@ -449,10 +452,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         titleView.setEllipsize(TextUtils.TruncateAt.END);
         topView.addView(titleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 16, 138.333f - 12, 16, 0));
 
-        subtitleView = new TextView(context);
+        subtitleView = new SpoilersTextView(context);
         subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         subtitleView.setGravity(Gravity.CENTER);
-        subtitleView.setSingleLine();
+        subtitleView.setMaxLines(1);
         subtitleView.setEllipsize(TextUtils.TruncateAt.END);
         topView.addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 168 - 12, 0, 0));
 
@@ -528,17 +531,36 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         avatarDrawable.setInfo(user);
         avatarView.setForUserOrChat(user, avatarDrawable);
         titleView.setText(UserObject.getUserName(user));
-        final StringBuilder sb = new StringBuilder();
-        if (user != null) {
-            sb.append(PhoneFormat.getInstance().format("+" + user.phone));
+        final SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (user != null && !TextUtils.isEmpty(user.phone)) {
+            sb.append(spoilerIfSensitive(PhoneFormat.getInstance().format("+" + user.phone), SharedConfig.hideSensitivePhone()));
         }
         final String username = UserObject.getPublicUsername(user);
         if (username != null) {
-            sb.append(" • @").append(username);
+            if (sb.length() > 0) {
+                sb.append(" • ");
+            }
+            sb.append(spoilerIfSensitive("@" + username, SharedConfig.hideSensitiveUsername()));
         }
         subtitleView.setText(sb);
 
         versionView.setText(getVersionName());
+    }
+
+    public static CharSequence spoilerIfSensitive(CharSequence text) {
+        return spoilerIfSensitive(text, SharedConfig.hideSensitivePhone());
+    }
+
+    public static CharSequence spoilerIfSensitive(CharSequence text, boolean hide) {
+        if (!hide || TextUtils.isEmpty(text)) {
+            return text;
+        }
+        final SpannableStringBuilder spannable = SpannableStringBuilder.valueOf(text);
+        final TextStyleSpan.TextStyleRun run = new TextStyleSpan.TextStyleRun();
+        run.flags |= TextStyleSpan.FLAG_STYLE_SPOILER;
+        run.end = spannable.length();
+        spannable.setSpan(new TextStyleSpan(run), 0, spannable.length(), 0);
+        return spannable;
     }
 
 
@@ -609,8 +631,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     @Override
     public void onResume() {
         super.onResume();
-        if (listView.adapter != null) {
-            listView.adapter.update(false);
+        setInfo();
+        if (listView != null && listView.adapter != null) {
+            listView.adapter.update(true);
         }
     }
 
@@ -806,6 +829,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
 
         items.add(UItem.asShadow(null));
+        items.add(UItem.asHeader("BalalGram"));
+        items.add(SettingCell.Factory.of(98, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_fork, getString(R.string.ForkSettingsTitle)));
+
+        items.add(UItem.asShadow(null));
         if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
             final GramWallet wallet = GramWallet.getInstance(currentAccount);
             items.add(SettingCell.Factory.of(25, 0, 0, Theme.isCurrentThemeDark() ? R.drawable.settings_wallet_dark : R.drawable.settings_wallet, TextCell.applyNewSpanTimed(getString(R.string.WalletAttachMoney), 1790679020), null, wallet.getBalance() > 0 ? GramWallet.formatGrams(wallet.getBalance()) : null));
@@ -962,6 +989,10 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 16:
                 UserSelectorBottomSheet.open(0, BirthdayController.getInstance(UserConfig.selectedAccount).getState());
+                break;
+
+            case 98:
+                presentSettingFragment(new BalalSettingsActivity());
                 break;
 
             case 17:
@@ -1310,7 +1341,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             textLayout = new LinearLayout(context);
             textLayout.setOrientation(VERTICAL);
 
-            titleView = new TextView(context);
+            titleView = new SpoilersTextView(context);
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
             textLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 0));
 

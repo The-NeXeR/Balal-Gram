@@ -1788,9 +1788,50 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     }
 
     public void processForwardFromMyName(MessageObject messageObject, long did, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
+        processForwardFromMyName(messageObject, did, payStars, monoForumPeerId, suggestionParams, null, true, 0);
+    }
+
+    public void processForwardFromMyName(MessageObject messageObject, long did, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, String overwriteText, boolean notify, int threadId) {
         if (messageObject == null) {
             return;
         }
+        String messageOwnerMessage = (overwriteText == null)
+                ? messageObject.messageOwner.message
+                : overwriteText;
+        ArrayList<TLRPC.MessageEntity> messageOwnerEntities = (overwriteText == null)
+                ? messageObject.messageOwner.entities
+                : new ArrayList<>();
+
+        MessageObject emptyReplyMessageObject = null;
+        MessageObject emptyReplyTopMessageObject = null;
+        ChatActivity.ReplyQuote emptyReplyQuote = null;
+        if (!DialogObject.isEncryptedDialog(did)) {
+            if (threadId != 0) {
+                TLRPC.TL_forumTopic topic = getMessagesController().getTopicsController().findTopic(-did, threadId);
+                if (topic != null && topic.topicStartMessage != null) {
+                    emptyReplyTopMessageObject = new MessageObject(currentAccount, topic.topicStartMessage, false, false);
+                    emptyReplyTopMessageObject.isTopicMainMessage = true;
+                }
+            }
+            final TLRPC.DraftMessage draftMessage = getMediaDataController().getDraft(did, threadId);
+            final TLRPC.Message draftReplyMessage = (draftMessage != null && draftMessage.reply_to != null && draftMessage.reply_to.reply_to_msg_id != 0)
+                    ? getMediaDataController().getDraftMessage(did, threadId)
+                    : null;
+            if (draftReplyMessage != null) {
+                emptyReplyMessageObject = new MessageObject(
+                        currentAccount,
+                        draftReplyMessage,
+                        getMessagesController().getUsers(),
+                        false,
+                        false);
+                if (!TextUtils.isEmpty(draftMessage.reply_to.quote_text)) {
+                    emptyReplyQuote = ChatActivity.ReplyQuote.from(emptyReplyMessageObject, draftMessage.reply_to.quote_text, draftMessage.reply_to.quote_offset);
+                }
+            } else {
+                emptyReplyMessageObject = emptyReplyTopMessageObject;
+            }
+        }
+
         if (messageObject.messageOwner.media != null && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaEmpty) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaGame) && !(messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaInvoice)) {
             HashMap<String, String> params = null;
             if (DialogObject.isEncryptedDialog(did) && messageObject.messageOwner.peer_id != null && (messageObject.messageOwner.media.photo instanceof TLRPC.TL_photo || messageObject.messageOwner.media.document instanceof TLRPC.TL_document)) {
@@ -1798,19 +1839,22 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 params.put("parentObject", "sent_" + messageObject.messageOwner.peer_id.channel_id + "_" + messageObject.getId() + "_" + messageObject.getDialogId() + "_" + messageObject.type + "_" + messageObject.getSize());
             }
             if (messageObject.messageOwner.media.photo instanceof TLRPC.TL_photo) {
-                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of((TLRPC.TL_photo) messageObject.messageOwner.media.photo, null, did, messageObject.replyMessageObject, null, messageObject.messageOwner.message, messageObject.messageOwner.entities, null, params, true, 0, 0, messageObject.messageOwner.media.ttl_seconds, messageObject, false);
+                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of((TLRPC.TL_photo) messageObject.messageOwner.media.photo, null, did, emptyReplyMessageObject, emptyReplyTopMessageObject, messageOwnerMessage, messageOwnerEntities, null, params, notify, 0, 0, messageObject.messageOwner.media.ttl_seconds, messageObject, false);
+                fparams.replyQuote = emptyReplyQuote;
                 fparams.payStars = payStars;
                 fparams.monoForumPeer = monoForumPeerId;
                 fparams.suggestionParams = suggestionParams;
                 sendMessage(fparams);
             } else if (messageObject.messageOwner.media.document instanceof TLRPC.TL_document) {
-                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of((TLRPC.TL_document) messageObject.messageOwner.media.document, null, messageObject.messageOwner.attachPath, did, messageObject.replyMessageObject, null, messageObject.messageOwner.message, messageObject.messageOwner.entities, null, params, true, 0, 0, messageObject.messageOwner.media.ttl_seconds, messageObject, null, false);
+                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of((TLRPC.TL_document) messageObject.messageOwner.media.document, null, messageObject.messageOwner.attachPath, did, emptyReplyMessageObject, emptyReplyTopMessageObject, messageOwnerMessage, messageOwnerEntities, null, params, notify, 0, 0, messageObject.messageOwner.media.ttl_seconds, messageObject, null, false);
+                fparams.replyQuote = emptyReplyQuote;
                 fparams.payStars = payStars;
                 fparams.monoForumPeer = monoForumPeerId;
                 fparams.suggestionParams = suggestionParams;
                 sendMessage(fparams);
             } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaVenue || messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaGeo) {
-                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(messageObject.messageOwner.media, did, messageObject.replyMessageObject, null, null, null, true, 0, 0);
+                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(messageObject.messageOwner.media, did, emptyReplyMessageObject, emptyReplyTopMessageObject, null, null, notify, 0, 0);
+                fparams.replyQuote = emptyReplyQuote;
                 fparams.payStars = payStars;
                 fparams.monoForumPeer = monoForumPeerId;
                 fparams.suggestionParams = suggestionParams;
@@ -1821,7 +1865,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 user.first_name = messageObject.messageOwner.media.first_name;
                 user.last_name = messageObject.messageOwner.media.last_name;
                 user.id = messageObject.messageOwner.media.user_id;
-                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(user, did, messageObject.replyMessageObject, null, null, null, true, 0, 0);
+                SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(user, did, emptyReplyMessageObject, emptyReplyTopMessageObject, null, null, notify, 0, 0);
+                fparams.replyQuote = emptyReplyQuote;
                 fparams.monoForumPeer = monoForumPeerId;
                 fparams.suggestionParams = suggestionParams;
                 fparams.payStars = payStars;
@@ -1829,7 +1874,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else if (!DialogObject.isEncryptedDialog(did)) {
                 ArrayList<MessageObject> arrayList = new ArrayList<>();
                 arrayList.add(messageObject);
-                sendMessage(arrayList, did, true, false, true, 0, 0, null, -1, payStars, monoForumPeerId, suggestionParams);
+                sendMessage(arrayList, did, true, false, notify, 0, 0, null, -1, payStars, monoForumPeerId, suggestionParams);
             }
         } else if (messageObject.messageOwner.message != null) {
             TLRPC.WebPage webPage = null;
@@ -1854,7 +1899,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else {
                 entities = null;
             }
-            SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(messageObject.messageOwner.message, did, messageObject.replyMessageObject, null, webPage, true, entities, null, null, true, 0, 0, null, false);
+            SendMessagesHelper.SendMessageParams fparams = SendMessagesHelper.SendMessageParams.of(messageObject.messageOwner.message, did, emptyReplyMessageObject, emptyReplyTopMessageObject, webPage, true, entities, null, null, notify, 0, 0, null, false);
+            fparams.replyQuote = emptyReplyQuote;
             fparams.payStars = payStars;
             fparams.monoForumPeer = monoForumPeerId;
             fparams.suggestionParams = suggestionParams;
@@ -1862,7 +1908,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         } else if (DialogObject.isEncryptedDialog(did)) {
             ArrayList<MessageObject> arrayList = new ArrayList<>();
             arrayList.add(messageObject);
-            sendMessage(arrayList, did, true, false, true, 0, 0, null, -1, payStars, monoForumPeerId, suggestionParams);
+            sendMessage(arrayList, did, true, false, notify, 0, 0, null, -1, payStars, monoForumPeerId, suggestionParams);
         }
     }
 
@@ -2068,15 +2114,26 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         performSendMessageRequest(req, newMsgObj, null, null, null, null, false);
     }
 
+    public void sendGifWithCaption(TLRPC.Document document, String query, long peer, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, String caption) {
+        if (caption != null && caption.startsWith("@gif")) {
+            caption = "";
+        }
+        sendSticker(document, query, peer, null, null, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, 0, updateStickersOrder, parentObject, sendMessageChatArguments, 0, 0, null, false, caption);
+    }
+
     public void sendSticker(TLRPC.Document document, String query, long peer, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
         sendSticker(document, query, peer, null, null, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, scheduleRepeatPeriod, updateStickersOrder, parentObject, sendMessageChatArguments, stars, monoForumPeerId, suggestionParams);
     }
 
     public void sendSticker(TLRPC.Document document, String query, long peer, CharSequence caption, VideoEditedInfo videoEditedInfo, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
-        sendSticker(document, query, peer, caption, videoEditedInfo, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, scheduleRepeatPeriod, updateStickersOrder, parentObject, sendMessageChatArguments, stars, monoForumPeerId, suggestionParams, false);
+        sendSticker(document, query, peer, caption, videoEditedInfo, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, scheduleRepeatPeriod, updateStickersOrder, parentObject, sendMessageChatArguments, stars, monoForumPeerId, suggestionParams, false, null);
     }
 
     public void sendSticker(TLRPC.Document document, String query, long peer, CharSequence caption, VideoEditedInfo videoEditedInfo, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams, boolean invertMedia) {
+        sendSticker(document, query, peer, caption, videoEditedInfo, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, scheduleRepeatPeriod, updateStickersOrder, parentObject, sendMessageChatArguments, stars, monoForumPeerId, suggestionParams, invertMedia, null);
+    }
+
+    public void sendSticker(TLRPC.Document document, String query, long peer, CharSequence caption, VideoEditedInfo videoEditedInfo, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams, boolean invertMedia, String forkCaption) {
         if (document == null) {
             return;
         }
@@ -2190,14 +2247,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         ImageLoader.getInstance().putImageToCache(new BitmapDrawable(bitmapFinal[0]), keyFinal[0], false);
                     }
                     // secret chats re-upload the gif as a document; videoEditedInfo would turn it into a video that is converted from a missing local file
-                    SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, DialogObject.isEncryptedDialog(peer) ? null : videoEditedInfo, null, peer, replyToMsg, replyToTopMsg, null, null, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, false);
+                    SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, DialogObject.isEncryptedDialog(peer) ? null : videoEditedInfo, null, peer, replyToMsg, replyToTopMsg, forkCaption, null, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, false);
                     sendMessageParams.replyToStoryItem = storyItem;
                     sendMessageParams.replyQuote = quote;
                     sendMessageParams.sendMessageChatArguments = sendMessageChatArguments;
                     sendMessageParams.payStars = stars;
                     sendMessageParams.monoForumPeer = monoForumPeerId;
                     sendMessageParams.suggestionParams = suggestionParams;
-                    sendMessageParams.caption = caption != null ? caption.toString() : null;
+                    sendMessageParams.caption = caption != null ? caption.toString() : forkCaption;
                     sendMessageParams.invert_media = invertMedia;
                     sendMessage(sendMessageParams);
                 });
@@ -11690,7 +11747,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 final HashMap<String, String> params = new HashMap<>();
                                 final Bitmap[] bitmapFinal = new Bitmap[1];
                                 final String[] keyFinal = new String[1];
-                                if (photo.has_stickers = info.masks != null && !info.masks.isEmpty()) {
+                                if (photo.has_stickers = (
+                                    info.masks != null
+                                    && !info.masks.isEmpty()
+                                    && MessagesController.getGlobalMainSettings().getBoolean("photoHasSticker", true)
+                                )) {
                                     SerializedData serializedData = new SerializedData(4 + info.masks.size() * 20);
                                     serializedData.writeInt32(info.masks.size());
                                     for (int b = 0; b < info.masks.size(); b++) {

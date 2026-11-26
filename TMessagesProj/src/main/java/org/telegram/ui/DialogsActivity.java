@@ -594,6 +594,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuSubItem readItem;
     @Nullable
     private ActionBarMenuSubItem blockItem;
+    private ActionBarMenuSubItem profileInfoItem;
+
+    private ActionBarMenuItem forkItemRead;
+    private ActionBarMenuSubItem forkItemDelete;
 
     private float additionalFloatingTranslation;
     private float floatingButtonPanOffset;
@@ -715,6 +719,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final static int add_to_folder = 109;
     private final static int remove_from_folder = 110;
     private final static int community_ungroup = 111;
+    private final static int profileInfo = 112;
 
     private final static int ARCHIVE_ITEM_STATE_PINNED = 0;
     private final static int ARCHIVE_ITEM_STATE_SHOWED = 1;
@@ -2275,6 +2280,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                                 parentPage.archivePullViewState = ARCHIVE_ITEM_STATE_SHOWED;
                                 if (AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
                                     AndroidUtilities.makeAccessibilityAnnouncement(LocaleController.getString(R.string.AccDescrArchivedChatsShown));
+                                }
+                                if (MessagesController.getGlobalMainSettings().getBoolean("openArchiveOnPull", true)) {
+                                    AndroidUtilities.runOnUIThread(() -> {
+                                        Bundle args = new Bundle();
+                                        args.putInt("folderId", 1);
+                                        presentFragment(new DialogsActivity(args));
+                                    }, 200);
                                 }
                             }
                         }
@@ -3933,7 +3945,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         undoView.showWithAction(did, UndoView.ACTION_REMOVED_FROM_FOLDER, neverShow.size(), filter, null, null);
                     }
                     hideActionMode(false);
-                } else if (id == pin || id == read || id == delete || id == clear || id == mute || id == archive || id == block || id == archive2 || id == pin2) {
+                } else if (id == pin || id == read || id == delete || id == clear || id == mute || id == archive || id == block || id == archive2 || id == pin2 || id == profileInfo) {
                     performSelectedDialogsAction(selectedDialogs, id, true, false);
                 }
             }
@@ -6663,7 +6675,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pinItem = actionMode.addItemWithWidth(pin, R.drawable.msg_pin, dp(48));
         muteItem = actionMode.addItemWithWidth(mute, R.drawable.msg_mute, dp(48));
         archive2Item = actionMode.addItemWithWidth(archive2, R.drawable.msg_archive, dp(48));
-        deleteItem = actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete));
+        forkItemRead = actionMode.addItemWithWidth(read, R.drawable.msg_markread, dp(48), LocaleController.getString(R.string.MarkAsRead));
 
         ActionBarMenuItem otherItem = actionMode.addItemWithWidth(0, R.drawable.ic_ab_other, dp(48), LocaleController.getString(R.string.AccDescrMoreOptions));
         actionMode.addView(new View(getContext()), LayoutHelper.createLinear(5, LayoutHelper.MATCH_PARENT));
@@ -6671,9 +6683,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pin2Item = otherItem.addSubItem(pin2, R.drawable.msg_pin, LocaleController.getString(R.string.DialogPin));
         addToFolderItem = otherItem.addSubItem(add_to_folder, R.drawable.msg_addfolder, LocaleController.getString(R.string.FilterAddTo));
         removeFromFolderItem = otherItem.addSubItem(remove_from_folder, R.drawable.msg_removefolder, LocaleController.getString(R.string.FilterRemoveFrom));
-        readItem = otherItem.addSubItem(read, R.drawable.msg_markread, LocaleController.getString(R.string.MarkAsRead));
+        forkItemDelete = otherItem.addSubItem(delete, R.drawable.msg_delete, LocaleController.getString(R.string.Delete));
         clearItem = otherItem.addSubItem(clear, R.drawable.msg_clear, LocaleController.getString(R.string.ClearHistory));
         blockItem = otherItem.addSubItem(block, R.drawable.msg_block, LocaleController.getString(R.string.BlockUser));
+        profileInfoItem = otherItem.addSubItem(profileInfo, R.drawable.msg_message, LocaleController.getString(R.string.Info));
 
         muteItem.setOnLongClickListener(e -> {
             performSelectedDialogsAction(selectedDialogs, mute, true, true);
@@ -6683,7 +6696,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         actionModeViews.add(pinItem);
         actionModeViews.add(archive2Item);
         actionModeViews.add(muteItem);
-        actionModeViews.add(deleteItem);
+        actionModeViews.add(forkItemRead);
         actionModeViews.add(otherItem);
 
         updateCounters(false);
@@ -9162,9 +9175,13 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     alreadyAdded++;
                 }
             }
+            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+            boolean syncPins = preferences.getBoolean("syncPins", true);
             int maxPinnedCount;
             if (containsFilter) {
                 maxPinnedCount = 100 - filter.alwaysShow.size();
+            } else if (!syncPins) {
+                maxPinnedCount = 100;
             } else if (folderId != 0 || filter != null) {
                 if (UserConfig.getInstance(currentAccount).isPremium()) {
                     maxPinnedCount = getMessagesController().maxFolderPinnedDialogsCountPremium;
@@ -9440,6 +9457,11 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                         getNotificationsController().setDialogNotificationsSettings(selectedDialog, 0, NotificationsController.SETTING_MUTE_FOREVER);
                     }
                 }
+            } else if (action == profileInfo) {
+                Bundle args = new Bundle();
+                final boolean isChat = (chat != null);
+                args.putLong(isChat ? "chat_id" : "user_id", isChat ? chat.id : user.id);
+                presentFragment(new ProfileActivity(args));
             }
         }
         if (action == mute && !(count == 1 && canMuteCount == 1)) {
@@ -9917,6 +9939,23 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 pinItem.setContentDescription(LocaleController.getString(R.string.UnpinFromTop));
                 pin2Item.setText(LocaleController.getString(R.string.DialogUnpin));
             }
+        }
+        if (profileInfoItem != null) {
+            profileInfoItem.setVisibility(count > 1 ? View.GONE : View.VISIBLE);
+        }
+        if (forkItemRead != null) {
+            if (canReadCount != 0) {
+                forkItemRead.setIcon(R.drawable.msg_markread);
+                forkItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsRead));
+                forkItemRead.setVisibility(View.VISIBLE);
+            } else {
+                forkItemRead.setIcon(R.drawable.msg_markunread);
+                forkItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsUnread));
+                forkItemRead.setVisibility(forumCount == 0 && communitiesCount == 0 ? View.VISIBLE : View.GONE);
+            }
+        }
+        if (forkItemDelete != null) {
+            forkItemDelete.setVisibility(canDeleteCount != count || communitiesCount > 0 ? View.GONE : View.VISIBLE);
         }
     }
 

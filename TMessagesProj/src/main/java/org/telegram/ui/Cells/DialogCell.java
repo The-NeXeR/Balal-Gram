@@ -484,6 +484,12 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private float cornerProgress;
     private long lastUpdateTime;
     private float onlineProgress;
+    private boolean cachedIsOnline;
+    private int cachedColorOnline;
+
+    private static final int COLOR_LAST_SEEN_RECENT = 0xFFEAEA1E;
+    private static final int COLOR_LAST_SEEN_MODERATE = 0xFFEA841E;
+    private static final int COLOR_LAST_SEEN_STALE = 0xFFEA1E1E;
     private float chatCallProgress;
     private float innerProgress;
     private int progressStage;
@@ -849,11 +855,35 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 user = newUser;
             }
         }
-        boolean isOnline = isOnline();
-        onlineProgress = isOnline ? 1.0f : 0.0f;
+        computeOnlineColor();
+        onlineProgress = cachedIsOnline ? 1.0f : 0.0f;
+    }
+
+    private void computeOnlineColor() {
+        final int currentTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
+        cachedIsOnline = isOnline(currentTime);
+        cachedColorOnline = 0;
+        if (user != null && !user.self && user.status != null) {
+            final int diff = user.status.expires - currentTime;
+            if (diff > 0) {
+                cachedColorOnline = Theme.getColor(Theme.key_chats_onlineCircle);
+            } else if (MessagesController.getGlobalMainSettings().getBoolean("enableLastSeenDots", true)) {
+                cachedColorOnline = diff > -15 * 60 ? COLOR_LAST_SEEN_RECENT
+                    : diff > -30 * 60 ? COLOR_LAST_SEEN_MODERATE
+                    : diff > -60 * 60 ? COLOR_LAST_SEEN_STALE
+                    : 0;
+            }
+            if (cachedColorOnline != 0) {
+                cachedIsOnline = true;
+            }
+        }
     }
 
     private boolean isOnline() {
+        return isOnline(ConnectionsManager.getInstance(currentAccount).getCurrentTime());
+    }
+
+    private boolean isOnline(int currentTime) {
         if (isForumCell()) {
             return false;
         }
@@ -868,7 +898,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 return true;
             }
         }
-        if (user.status != null && user.status.expires > ConnectionsManager.getInstance(currentAccount).getCurrentTime()) {
+        if (user.status != null && user.status.expires > currentTime) {
             return true;
         }
         return false;
@@ -3403,7 +3433,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 boolean continueUpdate = false;
                 if (user != null && !MessagesController.isSupportUser(user) && !user.bot && (mask & MessagesController.UPDATE_MASK_STATUS) != 0) {
                     user = MessagesController.getInstance(currentAccount).getUser(user.id);
-                    if (wasDrawnOnline != isOnline()) {
+                    computeOnlineColor();
+                    if (wasDrawnOnline != cachedIsOnline) {
                         invalidate = true;
                     }
                 }
@@ -5106,7 +5137,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             return false;
         }
         if (isDialogCell && currentDialogFolderId == 0 && !stars) {
-            showTtl = ttlPeriod > 0 && !isOnline() && !hasCall && !storyParams.drawnLive;
+            showTtl = ttlPeriod > 0 && !cachedIsOnline && !hasCall && !storyParams.drawnLive;
             if (rightFragmentOpenedProgress != 1f && (showTtl || ttlProgress > 0)) {
                 if (timerDrawable == null || (timerDrawable.getTime() != ttlPeriod && ttlPeriod > 0)) {
                     timerDrawable = TimerDrawable.getTtlIconForDialogs(ttlPeriod);
@@ -5160,9 +5191,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 canvas.restore();
             }
             if (user != null && !MessagesController.isSupportUser(user) && !user.bot) {
-                boolean isOnline = isOnline();
+                boolean isOnline = cachedIsOnline;
                 wasDrawnOnline = isOnline;
+                int colorOnline = cachedColorOnline;
                 if (isOnline || onlineProgress != 0) {
+                    if (onlineProgress != 0 && colorOnline == 0) {
+                        colorOnline = Theme.getColor(Theme.key_chats_onlineCircle, resourcesProvider);
+                    }
                     int top = (int) (storyParams.originalAvatarRect.bottom - dp(useForceThreeLines || SharedConfig.useThreeLinesLayout ? 6 : 8));
                     int left;
                     if (LocaleController.isRTL) {
@@ -5173,7 +5208,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
                     Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
                     canvas.drawCircle(left, top, dp(7) * onlineProgress, Theme.dialogs_onlineCirclePaint);
-                    Theme.dialogs_onlineCirclePaint.setColor(Theme.getColor(Theme.key_chats_onlineCircle, resourcesProvider));
+                    Theme.dialogs_onlineCirclePaint.setColor(colorOnline);
                     canvas.drawCircle(left, top, dp(5) * onlineProgress, Theme.dialogs_onlineCirclePaint);
                     if (isOnline) {
                         if (onlineProgress < 1.0f) {

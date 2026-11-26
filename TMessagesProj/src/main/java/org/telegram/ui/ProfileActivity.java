@@ -671,6 +671,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int userInfoRow;
     private int channelInfoRow;
     private int usernameRow;
+    private int idRow;
     private int notificationsDividerRow;
     private int notificationsRow;
     private int bizHoursRow;
@@ -746,6 +747,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final ArrayList<TLRPC.ChatParticipant> visibleChatParticipants = new ArrayList<>();
     private final ArrayList<Integer> visibleSortedUsers = new ArrayList<>();
     private int usersForceShowingIn = 0;
+
+    private int balalHeaderRow;
+    private int balalSectionCell;
+    private int balalRow;
 
     private boolean firstLayout = true;
     private boolean invalidateScroll = true;
@@ -4307,6 +4312,18 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (getParentActivity() == null) {
                 return;
             }
+            final long idToCopy = dialogId != 0 ? dialogId : (userId != 0 ? userId : chatId);
+            if (position == idRow && idToCopy != 0) {
+                try {
+                    android.content.ClipboardManager clipboard = (android.content.ClipboardManager) ApplicationLoader.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE);
+                    android.content.ClipData clip = android.content.ClipData.newPlainText("label", String.valueOf(idToCopy));
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(getParentActivity(), LocaleController.getString("TextCopied", R.string.TextCopied), Toast.LENGTH_SHORT).show();
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                return;
+            }
             listView.stopScroll();
             if (position == affiliateRow) {
                 TLRPC.User user = getMessagesController().getUser(userId);
@@ -4528,6 +4545,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 presentFragment(new LiteModeSettingsActivity());
             } else if (position == devicesRow) {
                 presentFragment(new SessionsActivity(0));
+            } else if (position == balalRow) {
+                presentFragment(new BalalSettingsActivity());
             } else if (position == questionRow) {
                 showDialog(AlertsCreator.createSupportAlert(ProfileActivity.this, resourcesProvider));
             } else if (position == faqRow) {
@@ -10884,6 +10903,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         locationRow = -1;
         channelInfoRow = -1;
         usernameRow = -1;
+        idRow = -1;
         settingsTimerRow = -1;
         settingsKeyRow = -1;
         notificationsDividerRow = -1;
@@ -10921,6 +10941,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         hasMusic = false;
         hasBalance = userId != 0 && userInfo != null && userInfo.wallet_card != null
                 && (imageUpdater == null || myProfile);
+
+        balalHeaderRow = balalRow = balalSectionCell = -1;
 
         unblockRow = -1;
         joinRow = -1;
@@ -10983,10 +11005,25 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     setAvatarRow = rowCount++;
                     setAvatarSectionRow = rowCount++;
                 }
-                numberSectionRow = rowCount++;
-                numberRow = rowCount++;
-                setUsernameRow = rowCount++;
-                bioRow = rowCount++;
+                final boolean hidePhone = SharedConfig.hideSensitivePhone();
+                final boolean hideUsername = SharedConfig.hideSensitiveUsername();
+                final boolean hideId = SharedConfig.hideSensitiveId();
+                final boolean hideBio = SharedConfig.hideSensitiveBio();
+                if (!hidePhone || !hideUsername || !hideId || !hideBio) {
+                    numberSectionRow = rowCount++;
+                }
+                if (!hidePhone) {
+                    numberRow = rowCount++;
+                }
+                if (!hideUsername) {
+                    setUsernameRow = rowCount++;
+                }
+                if (!hideId) {
+                    idRow = rowCount++;
+                }
+                if (!hideBio) {
+                    bioRow = rowCount++;
+                }
 
                 settingsSectionRow = rowCount++;
 
@@ -11015,6 +11052,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 devicesRow = rowCount++;
                 languageRow = rowCount++;
                 devicesSectionRow = rowCount++;
+                balalHeaderRow = rowCount++;
+                balalRow = rowCount++;
+                balalSectionCell = rowCount++;
                 if (!getMessagesController().premiumFeaturesBlocked()) {
                     premiumRow = rowCount++;
                 }
@@ -11069,13 +11109,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
                 infoStartRow = rowCount;
-                if (!isBot && (hasPhone || !hasInfo)) {
+                if (!isBot && (hasPhone || !hasInfo) && !(myProfile && SharedConfig.hideSensitivePhone())) {
                     phoneRow = rowCount++;
                 }
-                if (userInfo != null && !TextUtils.isEmpty(userInfo.about)) {
+                if (userInfo != null && !TextUtils.isEmpty(userInfo.about) && !(myProfile && SharedConfig.hideSensitiveBio())) {
                     userInfoRow = rowCount++;
                 }
-                if (user != null && username != null) {
+                if (user != null && username != null && !(myProfile && SharedConfig.hideSensitiveUsername())) {
                     usernameRow = rowCount++;
                 }
                 if (userInfo != null) {
@@ -11091,6 +11131,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (userInfo.note != null) {
                         noteRow = rowCount++;
                     }
+                }
+                if (!(myProfile && SharedConfig.hideSensitiveId())) {
+                    idRow = rowCount++;
                 }
                 if (actionsView == null && userId != getUserConfig().getClientUserId()) {
                     notificationsRow = rowCount++;
@@ -11250,6 +11293,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 notificationsRow = rowCount++;
             }
+            idRow = rowCount++;
             if (rowCount > 0) {
                 infoSectionRow = rowCount++;
             }
@@ -13599,7 +13643,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             switch (holder.getItemViewType()) {
                 case VIEW_TYPE_HEADER:
                     HeaderCell headerCell = (HeaderCell) holder.itemView;
-                    if (position == infoHeaderRow) {
+                    if (position == balalHeaderRow) {
+                        headerCell.setText("BalalGram");
+                    } else if (position == infoHeaderRow) {
                         if (ChatObject.isChannel(currentChat) && !currentChat.megagroup && channelInfoRow != -1) {
                             headerCell.setText(LocaleController.getString(R.string.ReportChatDescription));
                         } else {
@@ -13689,6 +13735,11 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             getString(R.string.ProfileNotesInfo),
                             false
                         );
+                    } else if (position == idRow) {
+                        final long did = dialogId != 0 ? dialogId : (userId != 0 ? userId : chatId);
+                        if (did != 0) {
+                            detailCell.setTextAndValue(String.valueOf(did), "ID", false);
+                        }
                     } else if (position == usernameRow) {
                         String username = null;
                         CharSequence text;
@@ -14014,6 +14065,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         textCell.setTextAndIcon(LocaleController.getString(R.string.DataSettings), R.drawable.msg2_data, true);
                     } else if (position == chatRow) {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.ChatSettings), R.drawable.msg2_discussion, true);
+                    } else if (position == balalRow) {
+                        textCell.setTextAndIcon(LocaleController.getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, false);
                     } else if (position == filtersRow) {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.Filters), R.drawable.msg2_folder, true);
                     } else if (position == stickersRow) {
@@ -14456,6 +14509,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         position == versionRow || position == dataRow || position == chatRow ||
                         position == questionRow || position == devicesRow || position == filtersRow || position == stickersRow ||
                         position == faqRow || position == policyRow || position == sendLogsRow || position == sendLastLogsRow ||
+                        position == balalRow ||
                         position == clearLogsRow || position == switchBackendRow || position == setAvatarRow ||
                         position == addToGroupButtonRow || position == premiumRow || position == premiumGiftingRow ||
                         position == businessRow || position == liteModeRow || position == birthdayRow || position == channelRow ||
@@ -14484,10 +14538,17 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         @Override
         public int getItemViewType(int position) {
+            if (position == balalSectionCell) {
+                return VIEW_TYPE_SHADOW;
+            } else if (position == balalHeaderRow) {
+                return VIEW_TYPE_HEADER;
+            } else if (position == balalRow) {
+                return VIEW_TYPE_TEXT;
+            }
             if (position == infoHeaderRow || position == membersHeaderRow || position == settingsSectionRow2 ||
                     position == numberSectionRow || position == helpHeaderRow || position == debugHeaderRow || position == botPermissionsHeader) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
+            } else if (position == idRow || position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
                 return VIEW_TYPE_TEXT_DETAIL;
             } else if (position == usernameRow || position == setUsernameRow) {
                 return VIEW_TYPE_TEXT_DETAIL_MULTILINE;
@@ -14976,6 +15037,20 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     new SearchResult(402, getString(R.string.AskAQuestion), getString(R.string.SettingsHelp), R.drawable.msg2_help, () -> f.showDialog(AlertsCreator.createSupportAlert(f, null))).withLink("tg://settings/ask-question"),
                     new SearchResult(403, getString(R.string.TelegramFAQ), getString(R.string.SettingsHelp), R.drawable.msg2_help, () -> Browser.openUrl(f.getParentActivity(), getString(R.string.TelegramFaqUrl))).withLink("tg://settings/faq"),
                     new SearchResult(404, getString(R.string.PrivacyPolicy), getString(R.string.SettingsHelp), R.drawable.msg2_help, () -> Browser.openUrl(f.getParentActivity(), getString(R.string.PrivacyPolicyUrl))).withLink("tg://settings/privacy-policy"),
+
+                    new SearchResult(1000, getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity())),
+                    new SearchResult(1001, getString(R.string.HideSensitiveData), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_HIDE_SENSITIVE_DATA))),
+                    new SearchResult(1002, getString(R.string.SyncPins), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_SYNC_PINS))),
+                    new SearchResult(1003, getString(R.string.UnmutedOnTop), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_UNMUTED_ON_TOP))),
+                    new SearchResult(1004, getString(R.string.OpenArchiveOnPull), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_OPEN_ARCHIVE_ON_PULL))),
+                    new SearchResult(1005, getString(R.string.EnableLastSeenDots), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_ENABLE_LAST_SEEN_DOTS))),
+                    new SearchResult(1006, getString(R.string.ReplaceForward), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_REPLACE_FORWARD))),
+                    new SearchResult(1007, getString(R.string.InAppCamera), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_INAPP_CAMERA))),
+                    new SearchResult(1008, getString(R.string.SystemCamera), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_SYSTEM_CAMERA))),
+                    new SearchResult(1009, getString(R.string.PhotoHasSticker), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_PHOTO_HAS_STICKER))),
+                    new SearchResult(1010, getString(R.string.RearVideoMessages), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_REAR_VIDEO_MESSAGES))),
+                    new SearchResult(1011, getString(R.string.WebSocketTransport), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_WEBSOCKET_TRANSPORT))),
+                    new SearchResult(1012, getString(R.string.WebSocketDomain), getString(R.string.ForkSettingsTitle), R.drawable.menu_fork, () -> f.presentFragment(new BalalSettingsActivity().highlight(BalalSettingsActivity.ID_WEBSOCKET_DOMAIN))),
             };
         }
 
@@ -15867,6 +15942,10 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             put(++pointer, unofficialSecurityRiskDividerRow, sparseIntArray);
             put(++pointer, linkedCommunityRow, sparseIntArray);
             put(++pointer, linkedCommunityDividerRow, sparseIntArray);
+            put(++pointer, idRow, sparseIntArray);
+            put(++pointer, balalHeaderRow, sparseIntArray);
+            put(++pointer, balalRow, sparseIntArray);
+            put(++pointer, balalSectionCell, sparseIntArray);
         }
 
         private void put(int id, int position, SparseIntArray sparseIntArray) {

@@ -8676,7 +8676,9 @@ public class MessageObject {
             if (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaEmpty || getMedia(messageOwner) == null || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaWebPage && !(getMedia(messageOwner).webpage instanceof TLRPC.TL_webPage)) {
                 return false;
             }
-            if (user != null && user.bot && !hasExtendedMedia()) {
+            if (user != null && !DialogObject.isEncryptedDialog(getDialogId())
+                    && !hasExtendedMedia()
+                    && (messageOwner.from_id == null || messageOwner.from_id.user_id != UserConfig.getInstance(currentAccount).getClientUserId())) {
                 return true;
             }
             if (!isOut()) {

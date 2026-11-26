@@ -359,6 +359,8 @@ public class SharedConfig {
     public static boolean isFloatingDebugActive;
     public static LiteMode liteMode;
 
+    public static boolean hideTitleDialog = false;
+
     private static final int[] LOW_SOC = {
             -1775228513, // EXYNOS 850
             802464304,  // EXYNOS 7872
@@ -694,6 +696,8 @@ public class SharedConfig {
 
             preferences = ApplicationLoader.applicationContext.getSharedPreferences("Notifications", Activity.MODE_PRIVATE);
             showNotificationsForAllAccounts = preferences.getBoolean("AllAccounts", true);
+
+            hideTitleDialog = MessagesController.getGlobalMainSettings().getBoolean("hideTitle", false);
 
             configLoaded = true;
         }
@@ -1779,6 +1783,30 @@ public class SharedConfig {
         public static void increaseDismissedCount() {
             prefs.edit().putInt("dismissed_count", getDismissedCount() + 1).apply();
         }
+    }
+
+    public static boolean hideSensitiveData() {
+        return MessagesController.getGlobalMainSettings().getBoolean("hideSensitiveData", false);
+    }
+
+    public static boolean hideSensitivePhone() {
+        return hideSensitiveData() && hideSensitivePart("hideSensitivePhone");
+    }
+
+    public static boolean hideSensitiveUsername() {
+        return hideSensitiveData() && hideSensitivePart("hideSensitiveUsername");
+    }
+
+    public static boolean hideSensitiveBio() {
+        return hideSensitiveData() && hideSensitivePart("hideSensitiveBio");
+    }
+
+    public static boolean hideSensitiveId() {
+        return hideSensitiveData() && hideSensitivePart("hideSensitiveId");
+    }
+
+    private static boolean hideSensitivePart(String key) {
+        return MessagesController.getGlobalMainSettings().getBoolean(key, true);
     }
 
     private static Boolean animationsEnabled;

@@ -49,6 +49,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.ConnectionsManager;
@@ -1499,6 +1500,14 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
                 avatarImageView.setRoundRadius(chat.forum ? dp(ChatObject.hasStories(chat) ? 11 : 16) : dp(21));
             }
         }
+
+        int visibility = SharedConfig.hideTitleDialog ? View.GONE : View.VISIBLE;
+        if (avatarImageView != null) {
+            avatarImageView.setVisibility(visibility);
+        }
+        if (titleTextView != null) {
+            titleTextView.setVisibility(visibility);
+        }
     }
 
     public void updateOnlineCount() {
@@ -1592,7 +1601,9 @@ public class ChatAvatarContainer extends FrameLayout implements FactorAnimator.T
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
             title = getString(R.string.Updating);
         } else if (currentConnectionState == ConnectionsManager.ConnectionStateConnectingToProxy) {
-            title = getString(R.string.ConnectingToProxy);
+            title = SharedConfig.hideSensitiveData()
+                    ? "..."
+                    : LocaleController.getString("ConnectingToProxy", R.string.ConnectingToProxy);
         }
         if (title == null) {
             if (lastSubtitle != null) {
