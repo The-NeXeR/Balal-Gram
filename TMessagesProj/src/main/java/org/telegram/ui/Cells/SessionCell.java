@@ -74,7 +74,13 @@ public class SessionCell extends FrameLayout {
     private int currentAccount = UserConfig.selectedAccount;
 
     public SessionCell(Context context, int type) {
+        this(context, type, UserConfig.selectedAccount);
+    }
+
+    public SessionCell(Context context, int type, int account) {
         super(context);
+
+        currentAccount = account;
 
         linearLayout = new LinearLayout(context);
         linearLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -399,6 +405,10 @@ public class SessionCell extends FrameLayout {
             iconId = R.drawable.device_desktop_other;
             colorKey = Theme.key_avatar_backgroundCyan;
             colorKey2 = Theme.key_avatar_background2Cyan;
+        } else if (session.app_name.contains("BalalGram")) {
+            iconId = R.drawable.menu_balal;
+            colorKey = Theme.key_avatar_backgroundViolet;
+            colorKey2 = Theme.key_avatar_background2Violet;
         } else {
             iconId = R.drawable.device_web_other;
             colorKey = Theme.key_avatar_backgroundPink;

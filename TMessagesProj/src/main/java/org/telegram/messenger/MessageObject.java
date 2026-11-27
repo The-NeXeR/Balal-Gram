@@ -330,6 +330,7 @@ public class MessageObject {
     public CharSequence editingMessage;
     public ArrayList<TLRPC.MessageEntity> editingMessageEntities;
     public boolean editingMessageSearchWebPage;
+    public Boolean editingMediaSpoiler;
     public ArrayList<TLRPC.MessageEntity> webPageDescriptionEntities;
 
     public String previousMessage;
@@ -710,6 +711,9 @@ public class MessageObject {
 
     public boolean shouldDrawReactions() {
         if (isRepostPreview) {
+            return false;
+        }
+        if (MessagesController.getGlobalMainSettings().getBoolean("hideMessageReactions", false)) {
             return false;
         }
         return true;

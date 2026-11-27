@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Top corn tip -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.4,5.0 C10.4,3.5 11.1,2.5 12.0,2.5 C12.9,2.5 13.6,3.5 13.6,5.0 Z" />
+    <!-- Row 1 kernels -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.9,6.0 H10.4 A0.4,0.4 0 0,1 10.8,6.4 V7.9 A0.4,0.4 0 0,1 10.4,8.3 H8.9 A0.4,0.4 0 0,1 8.5,7.9 V6.4 A0.4,0.4 0 0,1 8.9,6.0 Z M11.5,6.0 H12.5 A0.4,0.4 0 0,1 12.9,6.4 V7.9 A0.4,0.4 0 0,1 12.5,8.3 H11.5 A0.4,0.4 0 0,1 11.1,7.9 V6.4 A0.4,0.4 0 0,1 11.5,6.0 Z M13.6,6.0 H15.1 A0.4,0.4 0 0,1 15.5,6.4 V7.9 A0.4,0.4 0 0,1 15.1,8.3 H13.6 A0.4,0.4 0 0,1 13.2,7.9 V6.4 A0.4,0.4 0 0,1 13.6,6.0 Z" />
+    <!-- Row 2 kernels -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.6,9.0 H10.4 A0.4,0.4 0 0,1 10.8,9.4 V10.9 A0.4,0.4 0 0,1 10.4,11.3 H8.6 A0.4,0.4 0 0,1 8.2,10.9 V9.4 A0.4,0.4 0 0,1 8.6,9.0 Z M11.5,9.0 H12.5 A0.4,0.4 0 0,1 12.9,9.4 V10.9 A0.4,0.4 0 0,1 12.5,11.3 H11.5 A0.4,0.4 0 0,1 11.1,10.9 V9.4 A0.4,0.4 0 0,1 11.5,9.0 Z M13.6,9.0 H15.4 A0.4,0.4 0 0,1 15.8,9.4 V10.9 A0.4,0.4 0 0,1 15.4,11.3 H13.6 A0.4,0.4 0 0,1 13.2,10.9 V9.4 A0.4,0.4 0 0,1 13.6,9.0 Z" />
+    <!-- Row 3 kernels -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.9,12.0 H10.4 A0.4,0.4 0 0,1 10.8,12.4 V13.9 A0.4,0.4 0 0,1 10.4,14.3 H8.9 A0.4,0.4 0 0,1 8.5,13.9 V12.4 A0.4,0.4 0 0,1 8.9,12.0 Z M11.5,12.0 H12.5 A0.4,0.4 0 0,1 12.9,12.4 V13.9 A0.4,0.4 0 0,1 12.5,14.3 H11.5 A0.4,0.4 0 0,1 11.1,13.9 V12.4 A0.4,0.4 0 0,1 11.5,12.0 Z M13.6,12.0 H15.1 A0.4,0.4 0 0,1 15.5,12.4 V13.9 A0.4,0.4 0 0,1 15.1,14.3 H13.6 A0.4,0.4 0 0,1 13.2,13.9 V12.4 A0.4,0.4 0 0,1 13.6,12.0 Z" />
+    <!-- Lower cob base -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9.4,15.0 H14.6 C14.2,16.5 13.2,17.7 12.0,17.7 C10.8,17.7 9.8,16.5 9.4,15.0 Z" />
+    <!-- Left husk -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.3,19.4 C8.2,19.0 5.6,16.2 4.9,11.3 C4.8,10.6 5.6,10.2 6.1,10.8 C7.7,12.7 9.1,15.2 10.5,18.2 Z" />
+    <!-- Right husk -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12.7,19.4 C15.8,19.0 18.4,16.2 19.1,11.3 C19.2,10.6 18.4,10.2 17.9,10.8 C16.3,12.7 14.9,15.2 13.5,18.2 Z" />
+    <!-- Bottom stem -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.1,18.7 L12.9,18.7 L12.6,21.5 C12.55,21.8 12.3,22.0 12.0,22.0 C11.7,22.0 11.45,21.8 11.4,21.5 Z" />
+</vector>

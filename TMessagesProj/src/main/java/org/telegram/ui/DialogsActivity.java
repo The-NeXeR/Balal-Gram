@@ -596,8 +596,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ActionBarMenuSubItem blockItem;
     private ActionBarMenuSubItem profileInfoItem;
 
-    private ActionBarMenuItem forkItemRead;
-    private ActionBarMenuSubItem forkItemDelete;
+    private ActionBarMenuItem balalItemRead;
+    private ActionBarMenuSubItem balalItemDelete;
 
     private float additionalFloatingTranslation;
     private float floatingButtonPanOffset;
@@ -6675,7 +6675,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pinItem = actionMode.addItemWithWidth(pin, R.drawable.msg_pin, dp(48));
         muteItem = actionMode.addItemWithWidth(mute, R.drawable.msg_mute, dp(48));
         archive2Item = actionMode.addItemWithWidth(archive2, R.drawable.msg_archive, dp(48));
-        forkItemRead = actionMode.addItemWithWidth(read, R.drawable.msg_markread, dp(48), LocaleController.getString(R.string.MarkAsRead));
+        balalItemRead = actionMode.addItemWithWidth(read, R.drawable.msg_markread, dp(48), LocaleController.getString(R.string.MarkAsRead));
 
         ActionBarMenuItem otherItem = actionMode.addItemWithWidth(0, R.drawable.ic_ab_other, dp(48), LocaleController.getString(R.string.AccDescrMoreOptions));
         actionMode.addView(new View(getContext()), LayoutHelper.createLinear(5, LayoutHelper.MATCH_PARENT));
@@ -6683,7 +6683,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         pin2Item = otherItem.addSubItem(pin2, R.drawable.msg_pin, LocaleController.getString(R.string.DialogPin));
         addToFolderItem = otherItem.addSubItem(add_to_folder, R.drawable.msg_addfolder, LocaleController.getString(R.string.FilterAddTo));
         removeFromFolderItem = otherItem.addSubItem(remove_from_folder, R.drawable.msg_removefolder, LocaleController.getString(R.string.FilterRemoveFrom));
-        forkItemDelete = otherItem.addSubItem(delete, R.drawable.msg_delete, LocaleController.getString(R.string.Delete));
+        balalItemDelete = otherItem.addSubItem(delete, R.drawable.msg_delete, LocaleController.getString(R.string.Delete));
         clearItem = otherItem.addSubItem(clear, R.drawable.msg_clear, LocaleController.getString(R.string.ClearHistory));
         blockItem = otherItem.addSubItem(block, R.drawable.msg_block, LocaleController.getString(R.string.BlockUser));
         profileInfoItem = otherItem.addSubItem(profileInfo, R.drawable.msg_message, LocaleController.getString(R.string.Info));
@@ -6696,7 +6696,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         actionModeViews.add(pinItem);
         actionModeViews.add(archive2Item);
         actionModeViews.add(muteItem);
-        actionModeViews.add(forkItemRead);
+        actionModeViews.add(balalItemRead);
         actionModeViews.add(otherItem);
 
         updateCounters(false);
@@ -6812,12 +6812,16 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     selectWithStableId = true;
                 }
                 filterTabsView.removeTabs();
+                final boolean hideAllChatsTab = MessagesController.getGlobalMainSettings().getBoolean("hideAllChatsTab", false);
                 for (int a = 0, N = filters.size(); a < N; a++) {
                     if (filters.get(a).isDefault()) {
-                        filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, false, true, filters.get(a).locked);
+                        if (hideAllChatsTab) {
+                            continue;
+                        }
+                        filterTabsView.addTab(a, 0, LocaleController.getString(R.string.FilterAllChats), null, org.telegram.messenger.balalgram.FolderIcons.getIconRes(filters.get(a)), false, true, filters.get(a).locked);
                     } else {
                         final MessagesController.DialogFilter filter = filters.get(a);
-                        filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, filter.title_noanimate, false, filters.get(a).locked);
+                        filterTabsView.addTab(a, filter.localId, filter.name, filter.entities, org.telegram.messenger.balalgram.FolderIcons.getIconRes(filter), filter.title_noanimate, false, filters.get(a).locked);
                     }
                 }
                 if (stableId >= 0) {
@@ -6843,6 +6847,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     viewPages[a].listView.setScrollingTouchSlop(RecyclerView.TOUCH_SLOP_PAGING);
                 }
                 filterTabsView.finishAddingTabs(animatedUpdateItems);
+                if (applyDefaultFolderLanding(filters, stableId < 0)) {
+                    updateCurrentTab = true;
+                }
                 if (updateCurrentTab) {
                     switchToCurrentSelectedMode(false);
                 }
@@ -6908,6 +6915,55 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 }
             }
         }
+    }
+
+    private int defaultLandingFilterIndex(ArrayList<MessagesController.DialogFilter> filters) {
+        final SharedPreferences prefs = MessagesController.getGlobalMainSettings();
+        final int defaultFolderId = prefs.getInt("defaultFolderId", -1);
+        if (defaultFolderId != -1) {
+            for (int a = 0; a < filters.size(); a++) {
+                if (!filters.get(a).isDefault() && filters.get(a).localId == defaultFolderId) {
+                    return a;
+                }
+            }
+        }
+        if (prefs.getBoolean("hideAllChatsTab", false)) {
+            for (int a = 0; a < filters.size(); a++) {
+                if (!filters.get(a).isDefault()) {
+                    return a;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private boolean isDefaultLandingFolder(ViewPage page) {
+        ArrayList<MessagesController.DialogFilter> filters = getMessagesController().getDialogFilters();
+        int landingIndex = defaultLandingFilterIndex(filters);
+        return landingIndex >= 0 && page.selectedType == landingIndex;
+    }
+
+    private boolean applyDefaultFolderLanding(ArrayList<MessagesController.DialogFilter> filters, boolean freshBuild) {
+        if (filterTabsView == null || viewPages == null || viewPages.length == 0 || filters == null || filters.size() <= 1) {
+            return false;
+        }
+        final SharedPreferences prefs = MessagesController.getGlobalMainSettings();
+        final boolean hideAllChatsTab = prefs.getBoolean("hideAllChatsTab", false);
+
+        int landingIndex = defaultLandingFilterIndex(filters);
+        if (landingIndex < 0) {
+            return false;
+        }
+        if (!freshBuild) {
+            final int current = viewPages[0].selectedType;
+            final boolean currentHidden = current >= 0 && current < filters.size() && hideAllChatsTab && filters.get(current).isDefault();
+            if (!currentHidden) {
+                return false;
+            }
+        }
+        final MessagesController.DialogFilter target = filters.get(landingIndex);
+        filterTabsView.selectTabWithStableId(target.isDefault() ? 0 : target.localId);
+        return true;
     }
 
     @Override
@@ -9943,19 +9999,19 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (profileInfoItem != null) {
             profileInfoItem.setVisibility(count > 1 ? View.GONE : View.VISIBLE);
         }
-        if (forkItemRead != null) {
+        if (balalItemRead != null) {
             if (canReadCount != 0) {
-                forkItemRead.setIcon(R.drawable.msg_markread);
-                forkItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsRead));
-                forkItemRead.setVisibility(View.VISIBLE);
+                balalItemRead.setIcon(R.drawable.msg_markread);
+                balalItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsRead));
+                balalItemRead.setVisibility(View.VISIBLE);
             } else {
-                forkItemRead.setIcon(R.drawable.msg_markunread);
-                forkItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsUnread));
-                forkItemRead.setVisibility(forumCount == 0 && communitiesCount == 0 ? View.VISIBLE : View.GONE);
+                balalItemRead.setIcon(R.drawable.msg_markunread);
+                balalItemRead.setContentDescription(LocaleController.getString(R.string.MarkAsUnread));
+                balalItemRead.setVisibility(forumCount == 0 && communitiesCount == 0 ? View.VISIBLE : View.GONE);
             }
         }
-        if (forkItemDelete != null) {
-            forkItemDelete.setVisibility(canDeleteCount != count || communitiesCount > 0 ? View.GONE : View.VISIBLE);
+        if (balalItemDelete != null) {
+            balalItemDelete.setVisibility(canDeleteCount != count || communitiesCount > 0 ? View.GONE : View.VISIBLE);
         }
     }
 
@@ -11380,6 +11436,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         return shareTopView != null ? shareTopView.getLoadedWebPage() : null;
     }
 
+    public TLRPC.WebPage getSharedExtractedWebPage() {
+        return shareTopView != null ? shareTopView.getExtractedWebPage() : null;
+    }
+
     public boolean isWebPagePreviewEnabled() {
         return shareTopView == null || shareTopView.isPreviewEnabled();
     }
@@ -11394,7 +11454,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             return;
         }
         if (shareTopView == null) {
-            shareTopView = new ShareTopView(getParentActivity(), getResourceProvider());
+            final boolean allowExtraction = arguments.getBoolean("externalShareAllowWebPageMediaExtraction");
+            shareTopView = new ShareTopView(getParentActivity(), getResourceProvider(),
+                allowExtraction ? commentView::getFieldText : null, allowExtraction ? commentView::balalRemoveWebPageLink : null);
             shareTopView.setLayoutClickListener(v -> {
                 if (hasSharedMediaEntries()) openSharedMediaEditor();
             });
@@ -12469,7 +12531,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         if (communityId != 0) {
             newVisibility = false;
         } else if (isArchive()) {
-            newVisibility = !getStoriesController().getHiddenList().isEmpty();
+            boolean hideStoriesInArchive = MessagesController.getGlobalMainSettings().getBoolean("hideStoriesInArchive", false);
+            newVisibility = !hideStoriesInArchive && !getStoriesController().getHiddenList().isEmpty();
         } else {
             newVisibility = !onlySelfStories && getStoriesController().hasStories();
             onlySelfStories = getStoriesController().hasOnlySelfStories();
@@ -14071,23 +14134,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     private boolean openAccountSelector(View view) {
         final ArrayList<Integer> accountNumbers = new ArrayList<>();
-
-        accountNumbers.clear();
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (UserConfig.getInstance(a).isClientActivated()) {
-                accountNumbers.add(a);
-            }
-        }
-        Collections.sort(accountNumbers, (o1, o2) -> {
-            long l1 = UserConfig.getInstance(o1).loginTime;
-            long l2 = UserConfig.getInstance(o2).loginTime;
-            if (l1 > l2) {
-                return 1;
-            } else if (l1 < l2) {
-                return -1;
-            }
-            return 0;
-        });
+        org.telegram.messenger.balalgram.AccountOrder.collectAccountNumbers(accountNumbers);
 
         ItemOptions o = ItemOptions.makeOptions(this, view);
         if (accountNumbers.size() > 0) {

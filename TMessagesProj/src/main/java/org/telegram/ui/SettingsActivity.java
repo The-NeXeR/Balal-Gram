@@ -746,22 +746,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         items.add(UItem.asCustomShadow(topView, 200 - 12));
 
-        accountNumbers.clear();
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (UserConfig.getInstance(a).isClientActivated() && currentAccount != a) {
-                accountNumbers.add(a);
-            }
-        }
-        Collections.sort(accountNumbers, (o1, o2) -> {
-            long l1 = UserConfig.getInstance(o1).loginTime;
-            long l2 = UserConfig.getInstance(o2).loginTime;
-            if (l1 > l2) {
-                return 1;
-            } else if (l1 < l2) {
-                return -1;
-            }
-            return 0;
-        });
+        org.telegram.messenger.balalgram.AccountOrder.collectAccountNumbers(accountNumbers, currentAccount);
 
         final Set<String> suggestions = getMessagesController().pendingSuggestions;
         if (suggestions.contains("PREMIUM_GRACE")) {
@@ -830,7 +815,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         items.add(UItem.asShadow(null));
         items.add(UItem.asHeader("BalalGram"));
-        items.add(SettingCell.Factory.of(98, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_fork, getString(R.string.ForkSettingsTitle)));
+        items.add(SettingCell.Factory.of(98, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_balal, getString(R.string.BalalSettingsTitle)));
 
         items.add(UItem.asShadow(null));
         if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
@@ -1123,6 +1108,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         private SimpleTextView textView;
         private TextView counterView;
         private ImageView arrowView;
+        private ImageView reorderView;
 
         private final AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable botDrawable;
         private final AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable emojiStatusDrawable;
@@ -1171,11 +1157,20 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             arrowView.setScaleType(ImageView.ScaleType.CENTER);
             ThemeBind.colorFilter(arrowView, Theme.key_windowBackgroundWhiteGrayIcon, resourcesProvider, PorterDuff.Mode.SRC_IN);
 
+            reorderView = new ImageView(context);
+            reorderView.setImageResource(R.drawable.list_reorder);
+            reorderView.setScaleType(ImageView.ScaleType.CENTER);
+            reorderView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_stickers_menu, resourcesProvider), PorterDuff.Mode.SRC_IN));
+            reorderView.setContentDescription(getString(R.string.FilterReorder));
+            reorderView.setClickable(true);
+            reorderView.setVisibility(GONE);
+
             if (LocaleController.isRTL) {
                 textView.setGravity(Gravity.CENTER_VERTICAL | Gravity.RIGHT);
                 arrowView.setScaleX(-1);
 
                 addView(arrowView, LayoutHelper.createLinear(24, 24, 0, Gravity.CENTER_VERTICAL | Gravity.LEFT, 12, 0, 0, 0));
+                addView(reorderView, LayoutHelper.createLinear(48, 48, 0, Gravity.CENTER_VERTICAL | Gravity.LEFT));
                 addView(counterView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 20, 0, Gravity.CENTER_VERTICAL, 0, 0, 0, 0));
                 addView(textView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1f, Gravity.FILL, 18, 0, 0, 0));
                 addView(avatarView, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 18, 0, 18, 0));
@@ -1186,8 +1181,21 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 addView(avatarView, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.LEFT, 18, 0, 18, 0));
                 addView(textView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1f, Gravity.FILL, 0, 0, 18, 0));
                 addView(counterView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 20, 0, Gravity.CENTER_VERTICAL, 0, 0, 0, 0));
+                addView(reorderView, LayoutHelper.createLinear(48, 48, 0, Gravity.CENTER_VERTICAL | Gravity.RIGHT));
                 addView(arrowView, LayoutHelper.createLinear(24, 24, 0, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, 12, 0));
             }
+        }
+
+        @android.annotation.SuppressLint("ClickableViewAccessibility")
+        public void setReorder(boolean reorder, UniversalRecyclerView listView) {
+            arrowView.setVisibility(reorder ? GONE : VISIBLE);
+            reorderView.setVisibility(reorder ? VISIBLE : GONE);
+            reorderView.setOnTouchListener(!reorder ? null : (view, event) -> {
+                if (event.getAction() == MotionEvent.ACTION_DOWN && listView != null && listView.itemTouchHelper != null) {
+                    listView.itemTouchHelper.startDrag(listView.getChildViewHolder(this));
+                }
+                return false;
+            });
         }
 
         private int lastArrowColor;
@@ -1277,12 +1285,18 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             @Override
             public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, UniversalRecyclerView listView) {
                 ((AccountCell) view).set(item.intValue);
+                ((AccountCell) view).setReorder(item.checked, listView);
             }
 
             public static UItem of(int id, int account) {
+                return of(id, account, false);
+            }
+
+            public static UItem of(int id, int account, boolean reorder) {
                 final UItem item = UItem.ofFactory(AccountCell.Factory.class);
                 item.id = id;
                 item.intValue = account;
+                item.checked = reorder;
                 return item;
             }
 

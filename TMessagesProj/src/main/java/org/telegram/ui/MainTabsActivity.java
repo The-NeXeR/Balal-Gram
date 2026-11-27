@@ -54,6 +54,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.balalgram.AccountOrder;
+import org.telegram.messenger.balalgram.FolderIcons;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -517,7 +519,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             }
             folderItem.setEmojiCacheType(folder.title_noanimate ? AnimatedEmojiDrawable.CACHE_TYPE_NOANIMATE_FOLDER : AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES);
             final int color = getMessagesController().folderTags ? folder.color : -1;
-            folderItem.setTextAndIcon(title, 0, new FolderDrawable(getContext(), R.drawable.msg_folders, color));
+            int folderIconRes = FolderIcons.folderTabsStyle() == FolderIcons.FOLDER_TABS_STYLE_TEXT ? 0 : FolderIcons.getIconRes(folder);
+            folderItem.setTextAndIcon(title, 0, new FolderDrawable(getContext(), folderIconRes != 0 ? folderIconRes : R.drawable.msg_folders, color));
             folderItem.getTextView().setEmojiColor(getThemedColor(Theme.key_featuredStickers_addButton));
             folderItem.setMinimumWidth(160);
             folderItem.setOnClickListener(e -> {
@@ -621,23 +624,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     public boolean openAccountSelector(View button) {
         final ArrayList<Integer> accountNumbers = new ArrayList<>();
-
-        accountNumbers.clear();
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (UserConfig.getInstance(a).isClientActivated()) {
-                accountNumbers.add(a);
-            }
-        }
-        Collections.sort(accountNumbers, (o1, o2) -> {
-            long l1 = UserConfig.getInstance(o1).loginTime;
-            long l2 = UserConfig.getInstance(o2).loginTime;
-            if (l1 > l2) {
-                return 1;
-            } else if (l1 < l2) {
-                return -1;
-            }
-            return 0;
-        });
+        AccountOrder.collectAccountNumbers(accountNumbers);
 
         ItemOptions o = ItemOptions.makeOptions(this, button);
         if (UserConfig.getActivatedAccountsCount() < UserConfig.MAX_ACCOUNT_COUNT) {

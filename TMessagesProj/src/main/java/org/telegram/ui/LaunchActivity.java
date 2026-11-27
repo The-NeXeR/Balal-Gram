@@ -451,7 +451,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         getWindow().setBackgroundDrawable(new ActivityWindowEmptyBackgroundDrawable());
         getWindow().setFormat(PixelFormat.OPAQUE);
 
-        flagSecureReason = new FlagSecureReason(getWindow(), () -> SharedConfig.passcodeHash.length() > 0 && !SharedConfig.allowScreenCapture);
+        flagSecureReason = new FlagSecureReason(getWindow(), () -> MessagesController.getGlobalMainSettings().getBoolean("forceBlockScreenshots", false) || (SharedConfig.passcodeHash.length() > 0 && !SharedConfig.allowScreenCapture));
         flagSecureReason.attach();
 
         super.onCreate(savedInstanceState);
@@ -705,6 +705,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 AlertsCreator.createBackgroundActivityDialog(this).show();
                 SharedConfig.BackgroundActivityPrefs.setLastCheckedBackgroundActivity(System.currentTimeMillis());
             }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            org.telegram.messenger.balalgram.BalalMonetHelper.registerReceiver(this);
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -3502,8 +3506,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         return -1;
     }
 
+    private boolean hasOnlyExternalShareText() {
+        return sendingText != null && videoPath == null && voicePath == null && photoPathsArray == null
+                && documentsPathsArray == null && documentsUrisArray == null && contactsToSend == null
+                && exportingChatUri == null;
+    }
+
     private void openDialogsToSend(boolean animated) {
         Bundle args = new Bundle();
+        args.putBoolean("externalShareAllowWebPageMediaExtraction", hasOnlyExternalShareText());
         args.putBoolean("onlySelect", true);
         args.putBoolean("canSelectTopics", true);
         args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
@@ -6412,6 +6423,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             boolean notify = dialogsFragment == null || dialogsFragment.notify || _notify;
             int scheduleDate = _scheduleDate != 0 ? _scheduleDate : dialogsFragment == null ? 0 : dialogsFragment.scheduleDate;
             final boolean forceDocument = dialogsFragment != null && dialogsFragment.forceDocument;
+            final TLRPC.WebPage extractedWebPage = dialogsFragment != null && hasOnlyExternalShareText()
+                    ? dialogsFragment.getSharedExtractedWebPage() : null;
             final ChatActivity fragment;
             if (dids.size() <= 1) {
                 final long did = dids.get(0).dialogId;
@@ -6465,6 +6478,15 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 if (AlertsCreator.checkSlowMode(this, currentAccount, did, attachesCount > 1)) {
                     return false;
                 }
+                if (extractedWebPage != null && DialogObject.isChatDialog(did)) {
+                    final TLRPC.Chat chat = MessagesController.getInstance(account).getChat(-did);
+                    final boolean isDocument = org.telegram.messenger.balalgram.ExtractMediaFromPreview.isDocument(extractedWebPage);
+                    if (chat != null && !(isDocument ? ChatObject.canSendDocument(chat) : ChatObject.canSendPhoto(chat))) {
+                        final int action = isDocument ? ChatObject.ACTION_SEND_DOCUMENTS : ChatObject.ACTION_SEND_PHOTO;
+                        BulletinFactory.of(dialogsFragment).createErrorBulletin(ChatObject.getRestrictedErrorText(chat, action)).show();
+                        return false;
+                    }
+                }
             }
 
             if (topicsFragment != null) {
@@ -6505,7 +6527,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 });
                 mainFragmentsStack.get(mainFragmentsStack.size() - 1).showDialog(alert);
             } else {
-                if (!TextUtils.isEmpty(message)) {
+                final CharSequence extractedCaption = message != null ? message : "";
+                if (extractedWebPage == null && !TextUtils.isEmpty(message)) {
                     sendingText = message;
                     message = null;
                 }
@@ -6544,6 +6567,17 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             replyToMsg = new MessageObject(accountInstance.getCurrentAccount(), topic.topicStartMessage, false, false);
                             replyToMsg.isTopicMainMessage = true;
                         }
+                    }
+                    if (extractedWebPage != null) {
+                        if (fragment != null) {
+                            getActionBarLayout().presentFragment(fragment, dialogsFragment != null, false, true, false);
+                            presentedFragmentWithRemoveLast = dialogsFragment != null;
+                        }
+                        final CharSequence[] caption = {AndroidUtilities.getTrimmedString(extractedCaption)};
+                        final ArrayList<TLRPC.MessageEntity> entities = accountInstance.getMediaDataController().getEntities(caption, true);
+                        org.telegram.messenger.balalgram.ExtractMediaFromPreview.send(account, did, extractedWebPage, caption[0].toString(), entities,
+                                replyToMsg, replyToMsg, notify, scheduleDate, scheduleRepeatPeriod, 0);
+                        continue;
                     }
                     boolean photosEditorOpened = false, videoEditorOpened = false;
                     if (fragment != null) {
@@ -6823,6 +6857,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 webviewShareAPIDoneListener.run(resultCode == RESULT_OK);
                 webviewShareAPIDoneListener = null;
             }
+        } else if (requestCode == org.telegram.ui.Components.ChatAttachAlertPhotoLayout.REQUEST_CODE_DELETE_FROM_DEVICE) {
+            org.telegram.ui.Components.ChatAttachAlertPhotoLayout.onDeleteFromDeviceActivityResult(resultCode);
         } else {
             ThemeEditorView editorView = ThemeEditorView.getInstance();
             if (editorView != null) {
@@ -7100,6 +7136,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (debugThemeReceiver != null) {
             unregisterReceiver(debugThemeReceiver);
             debugThemeReceiver = null;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            org.telegram.messenger.balalgram.BalalMonetHelper.unregisterReceiver(this);
         }
 
         if (activeInstanceCount == 0) {

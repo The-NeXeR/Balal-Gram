@@ -356,6 +356,9 @@ public class EmojiView extends FrameLayout implements
     private ArrayList<TLRPC.Document> premiumStickers = new ArrayList<>();
     private ArrayList<TLRPC.StickerSetCovered> featuredStickerSets = new ArrayList<>();
 
+    private final HashSet<Long> archivedPlaceholderIds = new HashSet<>();
+    private final HashSet<Long> requestedArchivedSets = new HashSet<>();
+
     private ArrayList<TLRPC.StickerSetCovered> featuredEmojiSets = new ArrayList<>();
     private ArrayList<Long> keepFeaturedDuplicate = new ArrayList<>();
     private ArrayList<Long> expandedEmojiSets = new ArrayList<>();
@@ -432,7 +435,34 @@ public class EmojiView extends FrameLayout implements
         }
     };
 
+    private void sendGifFromPicker(View view, Object gif, String query, Object parent, boolean refreshRecents) {
+        final EmojiViewDelegate current = delegate;
+        current.beforePickerMediaSend(false, () -> {
+            current.onGifSelected(view, gif, query, parent, true, 0, 0);
+            if (refreshRecents) {
+                updateRecentGifs();
+            }
+        });
+    }
+
+    private void sendStickerFromPicker(StickerEmojiCell cell, String query) {
+        final EmojiViewDelegate current = delegate;
+        final TLRPC.Document sticker = cell.getSticker();
+        final Object parent = cell.getParentObject();
+        current.beforePickerMediaSend(true, () -> {
+            final boolean sameSticker = cell.getSticker() == sticker;
+            if (sameSticker) {
+                cell.disable();
+            }
+            current.onStickerSelected(sameSticker ? cell : null, sticker, query, parent, sameSticker ? cell.getSendAnimationData() : null, true, 0, 0);
+        });
+    }
+
     public interface EmojiViewDelegate {
+        default void beforePickerMediaSend(boolean sticker, Runnable send) {
+            send.run();
+        }
+
         default boolean onBackspace() {
             return false;
         }
@@ -2085,7 +2115,7 @@ public class EmojiView extends FrameLayout implements
                             return;
                         }
                         if (position < gifAdapter.recentItemsCount) {
-                            delegate.onGifSelected(view, recentGifs.get(position), null, "gif", true, 0, 0);
+                            sendGifFromPicker(view, recentGifs.get(position), null, "gif", false);
                         } else {
                             int resultPos = position;
                             if (gifAdapter.recentItemsCount > 0) {
@@ -2093,15 +2123,14 @@ public class EmojiView extends FrameLayout implements
                                 resultPos--; // trending section item
                             }
                             if (resultPos >= 0 && resultPos < gifAdapter.results.size()) {
-                                delegate.onGifSelected(view, gifAdapter.results.get(resultPos), null, gifAdapter.bot, true, 0, 0);
+                                sendGifFromPicker(view, gifAdapter.results.get(resultPos), null, gifAdapter.bot, false);
                             }
                         }
                     } else if (gifGridView.getAdapter() == gifSearchAdapter) {
                         if (position < 0 || position >= gifSearchAdapter.results.size()) {
                             return;
                         }
-                        delegate.onGifSelected(view, gifSearchAdapter.results.get(position), gifSearchAdapter.lastSearchImageString, gifSearchAdapter.bot, true, 0, 0);
-                        updateRecentGifs();
+                        sendGifFromPicker(view, gifSearchAdapter.results.get(position), gifSearchAdapter.lastSearchImageString, gifSearchAdapter.bot, true);
                     }
                 };
 
@@ -2354,8 +2383,7 @@ public class EmojiView extends FrameLayout implements
                 if (cell.isDisabled()) {
                     return;
                 }
-                cell.disable();
-                delegate.onStickerSelected(cell, cell.getSticker(), query, cell.getParentObject(), cell.getSendAnimationData(), true, 0, 0);
+                sendStickerFromPicker(cell, query);
             };
             stickersGridView.setOnItemClickListener(stickersOnItemClickListener);
             ThemeBind.listGlowColor(stickersGridView, Theme.key_chat_emojiPanelBackground, resourcesProvider);
@@ -5559,6 +5587,18 @@ public class EmojiView extends FrameLayout implements
                 firstTab = stickersTabOffset;
             }
             stickersTab.onPageScrolled(stickersGridAdapter.getTabForPosition(firstVisibleItem), firstTab);
+            if (!archivedPlaceholderIds.isEmpty()) {
+                int lastVisibleItem = stickersLayoutManager.findLastVisibleItemPosition();
+                int fromIdx = stickersGridAdapter.getTabForPosition(firstVisibleItem) - stickersTabOffset;
+                int toIdx = lastVisibleItem == RecyclerView.NO_POSITION
+                        ? fromIdx
+                        : stickersGridAdapter.getTabForPosition(lastVisibleItem) - stickersTabOffset;
+                for (int i = fromIdx; i <= toIdx + 1 && i < stickerSets.size(); i++) {
+                    if (i >= 0) {
+                        requestArchivedStickerSetIfNeeded(stickerSets.get(i));
+                    }
+                }
+            }
         } else if (type == Type.GIFS) {
             if (gifGridView.getAdapter() == gifAdapter && gifAdapter.trendingSectionItem >= 0 && gifTrendingTabNum >= 0 && gifRecentTabNum >= 0) {
                 int firstVisibleItem = gifLayoutManager.findFirstVisibleItemPosition();
@@ -5568,6 +5608,18 @@ public class EmojiView extends FrameLayout implements
                 gifTabs.onPageScrolled(firstVisibleItem >= gifAdapter.trendingSectionItem ? gifTrendingTabNum : gifRecentTabNum, 0);
             }
         }
+    }
+
+    private void requestArchivedStickerSetIfNeeded(TLRPC.TL_messages_stickerSet set) {
+        if (set == null || set.set == null) {
+            return;
+        }
+        long id = set.set.id;
+        if (!archivedPlaceholderIds.contains(id) || requestedArchivedSets.contains(id)) {
+            return;
+        }
+        requestedArchivedSets.add(id);
+        MediaDataController.getInstance(currentAccount).getStickerSet(MediaDataController.getInputStickerSet(set.set), null, false, null);
     }
 
     private void saveNewPage() {
@@ -5776,6 +5828,47 @@ public class EmojiView extends FrameLayout implements
                     groupStickerPackNum = 0;
                     stickerSets.add(0, pack);
                 }
+            }
+        }
+        archivedPlaceholderIds.clear();
+        if (MessagesController.getGlobalMainSettings().getBoolean("showArchivedStickers", false)) {
+            mediaDataController.loadArchivedStickerSets();
+            HashSet<Long> addedSetIds = new HashSet<>();
+            for (int a = 0; a < stickerSets.size(); a++) {
+                TLRPC.TL_messages_stickerSet set = stickerSets.get(a);
+                if (set != null && set.set != null) {
+                    addedSetIds.add(set.set.id);
+                }
+            }
+            ArrayList<TLRPC.StickerSetCovered> archived = mediaDataController.getArchivedStickerSets();
+            for (int a = 0, N = archived.size(); a < N; a++) {
+                TLRPC.StickerSetCovered covered = archived.get(a);
+                if (covered == null || covered.set == null) {
+                    continue;
+                }
+                long id = covered.set.id;
+                if (addedSetIds.contains(id) || mediaDataController.isStickerPackInstalled(id)) {
+                    continue;
+                }
+                TLRPC.TL_messages_stickerSet full = mediaDataController.getStickerSetById(id);
+                if (full != null && full.set != null && full.documents != null && !full.documents.isEmpty()) {
+                    addedSetIds.add(id);
+                    stickerSets.add(full);
+                    continue;
+                }
+                TLRPC.TL_messages_stickerSet placeholder = new TLRPC.TL_messages_stickerSet();
+                placeholder.set = covered.set;
+                if (covered.cover != null) {
+                    placeholder.documents.add(covered.cover);
+                } else if (!covered.covers.isEmpty()) {
+                    placeholder.documents.addAll(covered.covers);
+                }
+                if (placeholder.documents.isEmpty()) {
+                    continue;
+                }
+                addedSetIds.add(id);
+                archivedPlaceholderIds.add(id);
+                stickerSets.add(placeholder);
             }
         }
         for (int a = 0; a < stickerSets.size(); a++) {
@@ -6276,6 +6369,7 @@ public class EmojiView extends FrameLayout implements
                 .add(NotificationCenter.stickersDidLoad)
                 .add(NotificationCenter.recentDocumentsDidLoad)
                 .add(NotificationCenter.featuredStickersDidLoad)
+                .add(NotificationCenter.archivedStickersDidLoad)
                 .add(NotificationCenter.groupStickersDidLoad)
                 .add(NotificationCenter.currentUserPremiumStatusChanged);
 
@@ -6601,6 +6695,12 @@ public class EmojiView extends FrameLayout implements
                 }
             }
             updateStickerTabs(false);
+        } else if (id == NotificationCenter.archivedStickersDidLoad) {
+            if (stickersGridAdapter != null) {
+                updateStickerTabs(false);
+                reloadStickersAdapter();
+                checkPanels();
+            }
         } else if (id == NotificationCenter.featuredEmojiDidLoad) {
             if (emojiAdapter != null) {
                 emojiAdapter.notifyDataSetChanged();
@@ -6626,6 +6726,11 @@ public class EmojiView extends FrameLayout implements
 
             if (info != null && info.stickerset != null && info.stickerset.id == stickerSetId) {
                 updateStickerTabs(false);
+            }
+            if (archivedPlaceholderIds.contains(stickerSetId) && stickerSet != null && stickerSet.documents != null && !stickerSet.documents.isEmpty()) {
+                requestedArchivedSets.remove(stickerSetId);
+                updateStickerTabs(false);
+                reloadStickersAdapter();
             }
             if (toInstall.containsKey(stickerSetId) && args.length >= 2) {
                 long packId = stickerSetId;

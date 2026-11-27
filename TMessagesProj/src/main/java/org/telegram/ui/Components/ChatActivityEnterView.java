@@ -135,6 +135,8 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MediaDataController;
+import org.telegram.messenger.balalgram.ExtractMediaFromPreview;
+import org.telegram.messenger.balalgram.MediaSendConfirmation;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.RichMessageLayout;
 import org.telegram.messenger.MessageSuggestionParams;
@@ -7502,6 +7504,22 @@ public class ChatActivityEnterView extends FrameLayout implements
             if (checkPremiumAnimatedEmoji(currentAccount, dialog_id, parentFragment, null, message)) {
                 return;
             }
+            if (parentFragment != null && parentFragment.balalIsExtractMediaActive()
+                    && ExtractMediaFromPreview.hasMedia(parentFragment.balalExtractMediaFrozenWebPage)) {
+                boolean balalSent = balalTrySendExtractedMedia(message, notify, scheduleDate, scheduleRepeatPeriod, payStars);
+                if (balalSent) {
+                    if (messageEditText != null) {
+                        messageEditText.setText("");
+                    }
+                    hideTopView(true);
+                    if (delegate != null) {
+                        delegate.onMessageSend(message, notify, scheduleDate, scheduleRepeatPeriod, payStars);
+                    }
+                    lastTypingTimeSend = 0;
+                }
+                updateSendButtonPaid();
+                return;
+            }
             if (processSendingText(message, notify, scheduleDate, scheduleRepeatPeriod, payStars)) {
                 if (delegate.hasForwardingMessages() || (scheduleDate != 0 && !isInScheduleMode()) || isInScheduleMode()) {
                     if (messageEditText != null) {
@@ -7972,7 +7990,10 @@ public class ChatActivityEnterView extends FrameLayout implements
                 sendButton.setEffect(effectId = 0);
                 applyStoryToSendMessageParams(params);
                 params.invert_media = parentFragment != null && parentFragment.messagePreviewParams != null && parentFragment.messagePreviewParams.webpageTop;
-                if (parentFragment != null && parentFragment.getCurrentChat() != null && !ChatObject.canSendEmbed(parentFragment.getCurrentChat())) {
+                if (MessagesController.getGlobalMainSettings().getBoolean("disableLinkPreviewByDefault", false)) {
+                    params.searchLinks = false;
+                    params.mediaWebPage = null;
+                } else if (parentFragment != null && parentFragment.getCurrentChat() != null && !ChatObject.canSendEmbed(parentFragment.getCurrentChat())) {
                     params.searchLinks = false;
                     params.mediaWebPage = null;
                 } else if (messageWebPage instanceof TLRPC.TL_webPagePending) {
@@ -7999,6 +8020,55 @@ public class ChatActivityEnterView extends FrameLayout implements
             return true;
         }
         return false;
+    }
+
+    private boolean balalExtractMediaReadyToSend() {
+        return parentFragment != null
+            && parentFragment.balalIsExtractMediaActive()
+            && ExtractMediaFromPreview.hasMedia(parentFragment.balalExtractMediaFrozenWebPage);
+    }
+
+    public boolean balalRemoveWebPageLink(TLRPC.WebPage webPage) {
+        if (messageEditText == null || !ExtractMediaFromPreview.removeLink(messageEditText.getText(), webPage)) {
+            return false;
+        }
+        messageEditText.invalidateQuotes(true);
+        return true;
+    }
+
+    private boolean balalTrySendExtractedMedia(CharSequence message, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars) {
+        if (parentFragment == null) {
+            return false;
+        }
+        TLRPC.WebPage webPage = parentFragment.balalExtractMediaFrozenWebPage;
+        if (!ExtractMediaFromPreview.hasMedia(webPage)) {
+            return false;
+        }
+        boolean isDocument = ExtractMediaFromPreview.isDocument(webPage);
+        TLRPC.Chat chat = parentFragment.getCurrentChat();
+        if (chat != null) {
+            if (isDocument && !ChatObject.canSendDocument(chat)) {
+                BulletinFactory.of(parentFragment).createErrorBulletin(ChatObject.getRestrictedErrorText(chat, ChatObject.ACTION_SEND_DOCUMENTS)).show();
+                return false;
+            }
+            if (!isDocument && !ChatObject.canSendPhoto(chat)) {
+                BulletinFactory.of(parentFragment).createErrorBulletin(ChatObject.getRestrictedErrorText(chat, ChatObject.ACTION_SEND_PHOTO)).show();
+                return false;
+            }
+        }
+        CharSequence trimmed = AndroidUtilities.getTrimmedString(message == null ? "" : message);
+        CharSequence[] msg = new CharSequence[]{ trimmed };
+        ArrayList<TLRPC.MessageEntity> entities = MediaDataController.getInstance(currentAccount).getEntities(msg, supportsSendingNewEntities());
+        String caption = msg[0].toString();
+        MessageObject replyToTopMsg = getThreadMessage();
+        if (replyToTopMsg == null && replyingTopMessage != null) {
+            replyToTopMsg = replyingTopMessage;
+        }
+        boolean sent = ExtractMediaFromPreview.send(currentAccount, dialog_id, webPage, caption, entities, replyingMessageObject, replyToTopMsg, notify, scheduleDate, scheduleRepeatPeriod, payStars);
+        if (sent) {
+            parentFragment.balalResetExtractMediaAfterSend();
+        }
+        return sent;
     }
 
     public long getSendMonoForumPeerId() {
@@ -8224,7 +8294,7 @@ public class ChatActivityEnterView extends FrameLayout implements
                     }
                 }
             }
-        } else if (message.length() > 0 || forceShowSendButton || richDraftActive || audioToSend != null || videoToSendMessageObject != null || slowModeTimer == Integer.MAX_VALUE && !isSlowModeIgnored() || isLiveComment && getStarsPrice() > 0 || animatorIsBlockedByStreaming.getValue()) {
+        } else if (message.length() > 0 || balalExtractMediaReadyToSend() || forceShowSendButton || richDraftActive || audioToSend != null || videoToSendMessageObject != null || slowModeTimer == Integer.MAX_VALUE && !isSlowModeIgnored() || isLiveComment && getStarsPrice() > 0 || animatorIsBlockedByStreaming.getValue()) {
             shownSendButton = true;
             final String caption = messageEditText == null ? null : messageEditText.getCaption();
             boolean showBotButton = caption != null && (getSendButtonInternal().getVisibility() == VISIBLE || expandStickersButton != null && expandStickersButton.getVisibility() == VISIBLE);
@@ -12122,6 +12192,11 @@ public class ChatActivityEnterView extends FrameLayout implements
                 } else {
                     alert.show();
                 }
+            }
+
+            @Override
+            public void beforePickerMediaSend(boolean sticker, Runnable send) {
+                MediaSendConfirmation.confirm(parentFragment, sticker, send);
             }
 
             @Override

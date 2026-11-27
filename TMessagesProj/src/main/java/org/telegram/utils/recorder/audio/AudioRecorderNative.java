@@ -20,6 +20,7 @@ final class AudioRecorderNative {
     static @Nullable AudioRecorderNative create(
             @NonNull File outputFile,
             int sampleRate,
+            int bitrate,
             @Nullable File prefixFile,
             long prefixStartMs,
             long prefixEndMs
@@ -27,6 +28,7 @@ final class AudioRecorderNative {
         long handle = nCreate(
                 outputFile.getAbsolutePath(),
                 sampleRate,
+                bitrate,
                 prefixFile == null ? null : prefixFile.getAbsolutePath(),
                 prefixStartMs,
                 prefixEndMs
@@ -95,6 +97,7 @@ final class AudioRecorderNative {
     private static native long nCreate(
             String outputPath,
             int sampleRate,
+            int bitrate,
             @Nullable String prefixPath,
             long prefixStartMs,
             long prefixEndMs

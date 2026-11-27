@@ -138,7 +138,7 @@ import java.util.concurrent.CountDownLatch;
 
 public class MediaController implements AudioManager.OnAudioFocusChangeListener, NotificationCenter.NotificationCenterDelegate, SensorEventListener {
 
-    private native int startRecord(String path, int sampleRate);
+    private native int startRecord(String path, int sampleRate, int bitrate);
 
     private native int writeFrame(ByteBuffer frame, int len);
 
@@ -606,6 +606,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
         public int invert;
         public boolean isMuted;
         public boolean canDeleteAfter;
+        public boolean deleteAfterSend;
         public boolean hasSpoiler;
         public long starsAmount;
         public String emoji;
@@ -796,6 +797,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             photoEntry.invert = invert;
             photoEntry.isMuted = isMuted;
             photoEntry.canDeleteAfter = canDeleteAfter;
+            photoEntry.deleteAfterSend = deleteAfterSend;
             photoEntry.hasSpoiler = hasSpoiler;
             photoEntry.starsAmount = starsAmount;
             photoEntry.isChatPreviewSpoilerRevealed = isChatPreviewSpoilerRevealed;
@@ -2647,7 +2649,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 hasAudioFocus = 0;
                 int index = -1;
                 if (voiceMessagesPlaylist != null) {
-                    if (byVoiceEnd && (index = voiceMessagesPlaylist.indexOf(lastFile)) >= 0) {
+                    if (byVoiceEnd && !MessagesController.getGlobalMainSettings().getBoolean("disableAutoplayNextVoice", false) && (index = voiceMessagesPlaylist.indexOf(lastFile)) >= 0) {
                         voiceMessagesPlaylist.remove(index);
                         voiceMessagesPlaylistMap.remove(lastFile.getId());
                         if (voiceMessagesPlaylist.isEmpty()) {
@@ -5238,7 +5240,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                             return super.delete();
                         }
                     };
-                    if (startRecord(recordingAudioFile.getPath(), sampleRate) == 0) {
+                    if (startRecord(recordingAudioFile.getPath(), sampleRate, MessagesController.getGlobalMainSettings().getInt("voiceQualityBitrate", -1)) == 0) {
                         AndroidUtilities.runOnUIThread(() -> {
                             recordStartRunnable = null;
                             NotificationCenter.getInstance(recordingCurrentAccount).postNotificationName(NotificationCenter.recordStartError, recordingGuid);
@@ -5344,7 +5346,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             }
             AutoDeleteMediaTask.lockFile(recordingAudioFile);
             try {
-                if (startRecord(recordingAudioFile.getPath(), sampleRate) == 0) {
+                if (startRecord(recordingAudioFile.getPath(), sampleRate, MessagesController.getGlobalMainSettings().getInt("voiceQualityBitrate", -1)) == 0) {
                     AndroidUtilities.runOnUIThread(() -> {
                         recordStartRunnable = null;
                         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.recordStartError, guid);

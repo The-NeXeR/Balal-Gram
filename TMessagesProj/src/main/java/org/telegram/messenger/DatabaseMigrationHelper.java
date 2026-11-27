@@ -1718,6 +1718,13 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 181").stepThis().dispose();
             version = 181;
         }
+        if (version == 181) {
+            if (!hasColumn(database, "dialog_filter", "emoticon")) {
+                database.executeFast("ALTER TABLE dialog_filter ADD COLUMN emoticon TEXT").stepThis().dispose();
+            }
+            database.executeFast("PRAGMA user_version = 182").stepThis().dispose();
+            version = 182;
+        }
 
         return version;
     }

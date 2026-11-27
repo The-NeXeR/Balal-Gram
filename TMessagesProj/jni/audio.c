@@ -222,7 +222,7 @@ static int writeOggPage(ogg_page *page, FILE *os) {
     return written;
 }
 
-const opus_int32 bitrate = 30 * 1024;
+opus_int32 bitrate = 30 * 1024;
 static const int opus_application = OPUS_APPLICATION_AUDIO;
 const opus_int32 frame_size = 960;
 const int with_cvbr = 1;
@@ -299,11 +299,12 @@ void cleanupRecorder() {
     memset(&og, 0, sizeof(ogg_page));
 }
 
-int initRecorder(const char *path, opus_int32 sampleRate) {
+int initRecorder(const char *path, opus_int32 sampleRate, opus_int32 bitrateParam) {
     cleanupRecorder();
 
     coding_rate = sampleRate;
     rate = sampleRate;
+    bitrate = bitrateParam;
 
     if (!path) {
         LOGE("path is null");
@@ -515,10 +516,10 @@ int writeFrame(uint8_t *framePcmBytes, uint32_t frameByteCount, int end) {
     return 1;
 }
 
-JNIEXPORT jint Java_org_telegram_messenger_MediaController_startRecord(JNIEnv *env, jclass class, jstring path, jint sampleRate) {
+JNIEXPORT jint Java_org_telegram_messenger_MediaController_startRecord(JNIEnv *env, jclass class, jstring path, jint sampleRate, jint bitrateParam) {
     const char *pathStr = (*env)->GetStringUTFChars(env, path, 0);
 
-    int32_t result = initRecorder(pathStr, sampleRate);
+    int32_t result = initRecorder(pathStr, sampleRate, bitrateParam);
 
     if (pathStr != 0) {
         (*env)->ReleaseStringUTFChars(env, path, pathStr);
@@ -969,7 +970,7 @@ int cropOpusAudio(const char *inputPath, const char *outputPath, float startTime
         return 0;
     }
 
-    if (!initRecorder(outputPath, rate)) {
+    if (!initRecorder(outputPath, rate, OPUS_BITRATE_MAX)) {
         LOGE("Failed to init recorder");
         op_free(opusFile);
         return 0;
@@ -1079,7 +1080,7 @@ int joinOpusAudios(const char* file1, const char* file2, const char* dest) {
     int channels = MIN(head1->channel_count, head2->channel_count);
     opus_int32 rate = 48000;
 
-    if (!initRecorder(dest, rate)) {
+    if (!initRecorder(dest, rate, OPUS_BITRATE_MAX)) {
         LOGE("Failed to init recorder");
         op_free(opusFile1);
         op_free(opusFile2);
@@ -1256,7 +1257,7 @@ static void destroyAudioRecorderContext(AudioRecorderContext *recorder) {
     free(recorder);
 }
 
-static AudioRecorderContext *createAudioRecorderContext(const char *path, opus_int32 sampleRate) {
+static AudioRecorderContext *createAudioRecorderContext(const char *path, opus_int32 sampleRate, opus_int32 bitrateParam) {
     if (!path) {
         LOGE("path is null");
         return NULL;
@@ -1334,7 +1335,7 @@ static AudioRecorderContext *createAudioRecorderContext(const char *path, opus_i
         return NULL;
     }
 
-    result = opus_encoder_ctl(recorder->encoder, OPUS_SET_BITRATE(bitrate));
+    result = opus_encoder_ctl(recorder->encoder, OPUS_SET_BITRATE(bitrateParam));
     //result = opus_encoder_ctl(_encoder, OPUS_SET_COMPLEXITY(10));
     if (result != OPUS_OK) {
         LOGE("Error OPUS_SET_BITRATE returned: %s", opus_strerror(result));
@@ -1659,7 +1660,7 @@ static int cropAudioRecorderOpusAudio(const char *inputPath, const char *outputP
         return 0;
     }
 
-    AudioRecorderContext *recorder = createAudioRecorderContext(outputPath, rate);
+    AudioRecorderContext *recorder = createAudioRecorderContext(outputPath, rate, OPUS_BITRATE_MAX);
     if (!recorder) {
         LOGE("Failed to init recorder");
         op_free(opusFile);
@@ -1873,6 +1874,7 @@ JNIEXPORT jlong Java_org_telegram_utils_recorder_audio_AudioRecorderNative_nCrea
         jclass clazz,
         jstring path,
         jint sampleRate,
+        jint bitrateParam,
         jstring prefixPath,
         jlong prefixStartMs,
         jlong prefixEndMs
@@ -1882,7 +1884,7 @@ JNIEXPORT jlong Java_org_telegram_utils_recorder_audio_AudioRecorderNative_nCrea
         return 0;
     }
 
-    AudioRecorderContext *recorder = createAudioRecorderContext(pathString, sampleRate);
+    AudioRecorderContext *recorder = createAudioRecorderContext(pathString, sampleRate, bitrateParam);
     (*env)->ReleaseStringUTFChars(env, path, pathString);
     if (!recorder) {
         return 0;

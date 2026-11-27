@@ -142,6 +142,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.WebFile;
 import org.telegram.messenger.balalgram.BalalApi;
+import org.telegram.messenger.balalgram.QuickRepeat;
+import org.telegram.messenger.balalgram.VoiceFileSize;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.utils.Choreographer60FpsContent;
 import org.telegram.messenger.utils.CountdownTimer;
@@ -276,6 +278,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private final static int STICKER_STATUS_OFFSET = 6;
     private final static float EPHEMERAL_HINT_HEIGHT = 25f;
 
+    public static float MAX_STICKER_SIZE = 14.0f;
     public boolean clipToGroupBounds;
     public boolean drawForBlur;
     private boolean flipImage;
@@ -671,6 +674,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
 
         default void didPressSideButton(ChatMessageCell cell) {
+        }
+
+        default void didPressRepeatButton(ChatMessageCell cell) {
         }
 
         default void didQuickShareStart(ChatMessageCell cell, float x, float y) {
@@ -4385,6 +4391,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return true;
         }
 
+        if (checkRepeatButtonMotionEvent(event)) {
+            return true;
+        }
+
         if (videoPlayerRewinder != null && videoPlayerRewinder.rewindCount > 0) {
             if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
                 getParent().requestDisallowInterceptTouchEvent(false);
@@ -5199,7 +5209,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
                 if (lastTime != duration) {
                     lastTime = duration;
-                    String timeString = AndroidUtilities.formatLongDuration((int) duration);
+                    String timeString = AndroidUtilities.formatLongDuration((int) duration) + VoiceFileSize.label(documentAttach.size);
                     timeWidthAudio = (int) Math.ceil(Theme.chat_audioTimePaint.measureText(timeString));
                     durationLayout = new StaticLayout(timeString, Theme.chat_audioTimePaint, timeWidthAudio, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false);
                 }
@@ -8995,11 +9005,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     }
                     float maxHeight;
                     int maxWidth;
-                    if (AndroidUtilities.isTablet()) {
-                        maxHeight = maxWidth = (int) (AndroidUtilities.getMinTabletSide() * 0.4f);
-                    } else {
-                        maxHeight = maxWidth = (int) (Math.min(getParentWidth(), AndroidUtilities.displaySize.y) * 0.5f);
-                    }
+                    float size = MessagesController.getGlobalMainSettings().getFloat("stickerSize", MAX_STICKER_SIZE) - MAX_STICKER_SIZE;
+                    maxHeight = maxWidth = AndroidUtilities.isTablet()
+                        ? (int) (AndroidUtilities.getMinTabletSide() * (0.4f + size / 40))
+                        : (int) (Math.min(getParentWidth(), AndroidUtilities.displaySize.y) * (0.5f + size / 30));
                     String filter;
                     if (messageObject.isAnimatedEmoji() || messageObject.isDice()) {
                         float zoom = MessagesController.getInstance(currentAccount).animatedEmojisZoom;
@@ -11290,7 +11299,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             measureTime(messageObject);
             int minSize = dp(40 + 14 + 20 + 90 + 10) + timeWidth;
             if (!hasLinkPreview) {
-                String timeString = AndroidUtilities.formatLongDuration((int) duration);
+                String timeString = AndroidUtilities.formatLongDuration((int) duration) + VoiceFileSize.label(documentAttach.size);
                 int w = (int) Math.ceil(Theme.chat_audioTimePaint.measureText(timeString));
                 backgroundWidth = Math.min(maxWidth, minSize + w);
             }
@@ -18247,6 +18256,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public boolean hasOutboundsContent() {
+        if (checkNeedDrawRepeatButton()) {
+            return true;
+        }
         if (effectDrawable != null && effectDrawable.isNotEmpty() > 0) {
             return true;
         }
@@ -18685,6 +18697,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
         drawSideButton(canvas);
         drawSummarizeButton(canvas);
+        drawRepeatButton(canvas);
     }
 
     public void drawAnimatedEmojis(Canvas canvas, float alpha) {
@@ -19036,6 +19049,113 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 canvas.restoreToCount(restoreToSponosoredAlpha);
             }
         }
+    }
+
+    private final RectF repeatButtonRect = new RectF();
+    private Drawable repeatIcon;
+    private boolean repeatButtonPressed;
+
+    private boolean checkNeedDrawRepeatButton() {
+        if (currentMessageObject == null || !currentMessageObject.isOutOwner() || currentMessageObject.type != MessageObject.TYPE_TEXT) {
+            return false;
+        }
+        if (currentMessageObject.isSponsored() || currentMessageObject.isEphemeral()) {
+            return false;
+        }
+        long dialogId = currentMessageObject.getDialogId();
+        if (dialogId < 0) {
+            return false;
+        }
+        TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
+        if (user == null || !user.bot) {
+            return false;
+        }
+        return QuickRepeat.isEnabled(currentAccount, dialogId);
+    }
+
+    private void computeRepeatButtonRect() {
+        float left = getBackgroundDrawableLeft();
+        float top = getBackgroundDrawableTop();
+        float buttonTop;
+        if (layoutHeight <= dp(50)) {
+            buttonTop = top + (layoutHeight - dp(32)) / 2f;
+        } else {
+            buttonTop = top + layoutHeight - dp(9) - dp(32);
+        }
+        buttonTop += transitionParams.deltaBottom;
+        repeatButtonRect.set(left - dp(40), buttonTop, left - dp(8), buttonTop + dp(32));
+    }
+
+    private void drawRepeatButton(Canvas canvas) {
+        if (!checkNeedDrawRepeatButton()) {
+            return;
+        }
+        computeRepeatButtonRect();
+        if (repeatIcon == null) {
+            repeatIcon = getContext().getResources().getDrawable(R.drawable.msg_balal_repeat).mutate();
+            repeatIcon.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_serviceText), PorterDuff.Mode.SRC_IN));
+        }
+        canvas.drawRoundRect(repeatButtonRect, dp(16), dp(16), getThemedPaint(repeatButtonPressed ? Theme.key_paint_chatActionBackgroundSelected : Theme.key_paint_chatActionBackground));
+        if (hasGradientService()) {
+            canvas.drawRoundRect(repeatButtonRect, dp(16), dp(16), Theme.chat_actionBackgroundGradientDarkenPaint);
+        }
+        int iconSize = dp(18);
+        repeatIcon.setBounds(
+            (int) repeatButtonRect.centerX() - iconSize / 2,
+            (int) repeatButtonRect.centerY() - iconSize / 2,
+            (int) repeatButtonRect.centerX() + iconSize / 2,
+            (int) repeatButtonRect.centerY() + iconSize / 2
+        );
+        repeatIcon.draw(canvas);
+    }
+
+    private boolean checkRepeatButtonMotionEvent(MotionEvent event) {
+        if (!checkNeedDrawRepeatButton()) {
+            repeatButtonPressed = false;
+            return false;
+        }
+        computeRepeatButtonRect();
+        float x = getEventX(event);
+        float y = getEventY(event);
+        AndroidUtilities.rectTmp.set(repeatButtonRect);
+        AndroidUtilities.rectTmp.inset(-dp(12), -dp(12));
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                if (AndroidUtilities.rectTmp.contains(x, y)) {
+                    repeatButtonPressed = true;
+                    invalidate();
+                    return true;
+                }
+                return false;
+            case MotionEvent.ACTION_UP:
+                if (repeatButtonPressed) {
+                    repeatButtonPressed = false;
+                    invalidate();
+                    playSoundEffect(SoundEffectConstants.CLICK);
+                    if (AndroidUtilities.rectTmp.contains(x, y) && delegate != null) {
+                        delegate.didPressRepeatButton(this);
+                    }
+                    return true;
+                }
+                return false;
+            case MotionEvent.ACTION_CANCEL:
+                if (repeatButtonPressed) {
+                    repeatButtonPressed = false;
+                    invalidate();
+                    return true;
+                }
+                return false;
+            case MotionEvent.ACTION_MOVE:
+                if (repeatButtonPressed) {
+                    if (!AndroidUtilities.rectTmp.contains(x, y)) {
+                        repeatButtonPressed = false;
+                        invalidate();
+                    }
+                    return true;
+                }
+                return false;
+        }
+        return false;
     }
 
     private SummaryIcon summarizeIcon;

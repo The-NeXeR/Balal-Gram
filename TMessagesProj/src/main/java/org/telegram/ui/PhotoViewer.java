@@ -193,6 +193,8 @@ import org.telegram.messenger.UserObject;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.VideoEditedInfo;
 import org.telegram.messenger.WebFile;
+import org.telegram.messenger.balalgram.PhotoBinBulletin;
+import org.telegram.messenger.balalgram.PhotoCollage;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.camera.Size;
 import org.telegram.messenger.chromecast.ChromecastController;
@@ -365,6 +367,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean allowOrder = true;
 
     private boolean muteVideo;
+    private boolean applyRoundVideo;
 
     private boolean isUnalivePhoto() {
         if (sendPhotoType == SELECT_TYPE_STICKER) return true;
@@ -403,6 +406,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private ActionBar actionBar;
     private ImageView actionBarBackButton;
+    private ImageView deleteAfterSendButton;
+    private static final int BULLETIN_TAG_DELETE_FILE = 0x0DA5;
     private Drawable actionBarBackButtonDrawableDeafult;
     private Drawable actionBarBackButtonDrawableGlass;
     private boolean isActionBarVisible = true;
@@ -7457,13 +7462,21 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             final boolean showSchedule = !canEdit && canScheduleMessage && !hasTtl;
             final boolean showWithoutSound = !(canEdit && canReplace) && !userIsSelf;
             final boolean multipleSelected = placeProvider != null && placeProvider.getSelectedCount() > 1;
+            final boolean showSendAsRound = isCurrentVideo && !multipleSelected && !canEdit && !canReplace && sendPhotoType == 0 && (parentChatActivity != null || (placeProvider != null && placeProvider.getDialogId() != 0));
+            final ArrayList<MediaController.PhotoEntry> collagePhotos = placeProvider == null ? null : PhotoCollage.collect(placeProvider.getSelectedPhotos(), placeProvider.getSelectedPhotosOrder());
+            final boolean showSendAsCollage = collagePhotos != null && !isCurrentVideo && !canEdit && !canReplace && !hasTtl && sendPhotoType == 0;
 
             final ItemOptions options = ItemOptions.makeOptions(containerView, new DarkThemeResourceProvider(), view)
                 .addIf(showSendAsFile, R.drawable.msg_sendfile, getString(multipleSelected ? R.string.SendAsFiles : R.string.SendAsFile), () -> sendPressed(true, 0, 0, false, true, false))
                 .addIf(canReplace, R.drawable.msg_send, getString(R.string.SendAsNewPhoto), () -> sendPressed(true, 0, 0))
                 .addIf(canReplace, R.drawable.msg_replace, getString(R.string.ReplacePhoto), this::replacePressed)
                 .addIf(showSchedule, R.drawable.msg_calendar2, getString(userIsSelf ? R.string.SetReminder : R.string.ScheduleMessage), this::showScheduleDatePickerDialog)
-                .addIf(showWithoutSound, R.drawable.input_notify_off, getString(R.string.SendWithoutSound), () -> sendPressed(false, 0, 0));
+                .addIf(showWithoutSound, R.drawable.input_notify_off, getString(R.string.SendWithoutSound), () -> sendPressed(false, 0, 0))
+                .addIf(showSendAsRound, R.drawable.msg_video, getString(R.string.SendAsRoundVideo), () -> {
+                    applyRoundVideo = true;
+                    sendPressed(true, 0, 0);
+                })
+                .addIf(showSendAsCollage, R.drawable.msg_photos, getString(R.string.SendAsSinglePhoto), () -> sendAsSinglePhoto(collagePhotos));
 
             if (options.getItemsCount() == 0) return false;
 
@@ -7692,6 +7705,16 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             switchToEditMode(EDIT_MODE_FILTER);
         });
         tuneItem.setContentDescription(getString("AccDescrPhotoAdjust", R.string.AccDescrPhotoAdjust));
+
+        deleteAfterSendButton = new ImageView(parentActivity);
+        deleteAfterSendButton.setScaleType(ImageView.ScaleType.CENTER);
+        deleteAfterSendButton.setImageResource(R.drawable.msg_delete);
+        deleteAfterSendButton.setBackground(Theme.createInsetRoundRectDrawable(0x10FFFFFF, dp(22), dp(4), dp(6)));
+        deleteAfterSendButton.setColorFilter(0xffffffff);
+        deleteAfterSendButton.setContentDescription(getString(R.string.DeleteFromDevice));
+        deleteAfterSendButton.setVisibility(View.GONE);
+        deleteAfterSendButton.setOnClickListener(v -> toggleDeleteAfterSend());
+        itemsLayout.addView(deleteAfterSendButton, LayoutHelper.createLinear(48, 48));
 
         editorDoneLayout = new PickerBottomLayoutViewer(activityContext);
         editorDoneLayout.setBackgroundColor(0xcc000000);
@@ -7996,6 +8019,49 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
     private void replacePressed() {
         sendPressed(false, 0, 0, true, false, false);
+    }
+
+    private void sendAsSinglePhoto(ArrayList<MediaController.PhotoEntry> photos) {
+        if (placeProvider == null || photos == null) {
+            return;
+        }
+        applyCaption();
+        CharSequence collageCaption = null;
+        ArrayList<TLRPC.MessageEntity> collageEntities = null;
+        for (int a = 0; a < photos.size(); a++) {
+            if (!TextUtils.isEmpty(photos.get(a).caption)) {
+                collageCaption = photos.get(a).caption;
+                collageEntities = photos.get(a).entities;
+                break;
+            }
+        }
+        final CharSequence caption = collageCaption;
+        final ArrayList<TLRPC.MessageEntity> entities = collageEntities;
+        Utilities.globalQueue.postRunnable(() -> {
+            final MediaController.PhotoEntry collage = PhotoCollage.create(photos);
+            AndroidUtilities.runOnUIThread(() -> {
+                if (placeProvider == null || !isVisible()) {
+                    return;
+                }
+                if (collage == null) {
+                    BulletinFactory.of(containerView, resourcesProvider).createErrorBulletin(getString(R.string.UnknownError)).show();
+                    return;
+                }
+                final HashMap<Object, Object> selectedPhotos = placeProvider.getSelectedPhotos();
+                final ArrayList<Object> selectedPhotosOrder = placeProvider.getSelectedPhotosOrder();
+                if (selectedPhotos == null || selectedPhotosOrder == null) {
+                    return;
+                }
+                collage.caption = caption;
+                collage.entities = entities;
+                selectedPhotos.clear();
+                selectedPhotosOrder.clear();
+                selectedPhotos.put(collage.imageId, collage);
+                selectedPhotosOrder.add(collage.imageId);
+                hasCaptionForAllMedia = false;
+                sendPressed(true, 0, 0);
+            });
+        });
     }
 
     private void sendPressed(boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean replace, boolean forceDocument, boolean confirmed) {
@@ -8491,6 +8557,56 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             width = Math.max(width, dp(100));
         }
         actionBarContainer.updateRightPadding(width, false);
+    }
+
+    private MediaController.PhotoEntry currentSendPhotoEntry() {
+        if (currentIndex < 0 || currentIndex >= imagesArrLocals.size()) {
+            return null;
+        }
+        final Object object = imagesArrLocals.get(currentIndex);
+        return object instanceof MediaController.PhotoEntry ? (MediaController.PhotoEntry) object : null;
+    }
+
+    private boolean canDeleteAfterSend() {
+        if (sendPhotoType != 0 || sendPhotoTypeIsGif || sendPhotoTypeIsPollMedia || sendPhotoTypeIsPollMediaEdit || isDocumentsPicker) {
+            return false;
+        }
+        if (imagesArrLocals.isEmpty() || parentChatActivity == null || parentChatActivity.isSecretChat()) {
+            return false;
+        }
+        if (placeProvider == null || placeProvider.getEditingMessageObject() != null) {
+            return false;
+        }
+        final MediaController.PhotoEntry entry = currentSendPhotoEntry();
+        return entry != null && !entry.isVideo && !TextUtils.isEmpty(entry.path);
+    }
+
+    private void updateDeleteAfterSendButton() {
+        if (deleteAfterSendButton == null || actionBarContainer == null) {
+            return;
+        }
+        final boolean visible = canDeleteAfterSend();
+        final MediaController.PhotoEntry entry = visible ? currentSendPhotoEntry() : null;
+        final boolean armed = entry != null && entry.deleteAfterSend;
+        deleteAfterSendButton.setSelected(armed);
+        deleteAfterSendButton.setColorFilter(armed ? Theme.getColor(Theme.key_text_RedBold, resourcesProvider) : 0xffffffff);
+        deleteAfterSendButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
+    private void toggleDeleteAfterSend() {
+        final MediaController.PhotoEntry entry = canDeleteAfterSend() ? currentSendPhotoEntry() : null;
+        if (entry == null) {
+            return;
+        }
+        entry.deleteAfterSend = !entry.deleteAfterSend;
+        updateDeleteAfterSendButton();
+        if (entry.deleteAfterSend) {
+            PhotoBinBulletin.show(containerView, resourcesProvider, BULLETIN_TAG_DELETE_FILE, () -> {
+                final CaptionPhotoViewer compose = placeProvider != null && placeProvider.isCaptionAbove() && topCaptionEdit.isShown()
+                    ? topCaptionEdit : captionEdit;
+                return compose == null ? Double.NaN : compose.getComposeTopOnScreen();
+            });
+        }
     }
 
     private void setMenuItemIcon(boolean animated, boolean isFinal) {
@@ -9761,6 +9877,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     }
 
     private VideoEditedInfo getCurrentVideoEditedInfo() {
+        final boolean roundVideoRequested = applyRoundVideo;
+        applyRoundVideo = false;
         if (!isCurrentVideo && hasAnimatedMediaEntities() && centerImage.getBitmapWidth() > 0) {
             float maxSize = 854;
             if (sendPhotoType == SELECT_TYPE_AVATAR) {
@@ -9900,6 +10018,34 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (sendPhotoType == SELECT_TYPE_AVATAR) {
             videoEditedInfo.avatarStartTime = avatarStartTime;
             videoEditedInfo.originalBitrate = originalBitrate;
+        }
+        if (roundVideoRequested) {
+            videoEditedInfo.roundVideo = true;
+            final boolean roundRotated = videoEditedInfo.rotationValue == 90 || videoEditedInfo.rotationValue == 270;
+            int roundDisplayWidth = Math.max(1, roundRotated ? videoEditedInfo.resultHeight : videoEditedInfo.resultWidth);
+            int roundDisplayHeight = Math.max(1, roundRotated ? videoEditedInfo.resultWidth : videoEditedInfo.resultHeight);
+            MediaController.CropState roundCrop = videoEditedInfo.cropState != null ? videoEditedInfo.cropState.clone() : new MediaController.CropState();
+            float roundSide = Math.max(1, Math.min(roundDisplayWidth * roundCrop.cropPw, roundDisplayHeight * roundCrop.cropPh));
+            if (roundSide > 640) {
+                float scale = 640 / roundSide;
+                videoEditedInfo.resultWidth = Math.max(1, Math.round(videoEditedInfo.resultWidth * scale));
+                videoEditedInfo.resultHeight = Math.max(1, Math.round(videoEditedInfo.resultHeight * scale));
+                roundDisplayWidth = roundRotated ? videoEditedInfo.resultHeight : videoEditedInfo.resultWidth;
+                roundDisplayHeight = roundRotated ? videoEditedInfo.resultWidth : videoEditedInfo.resultHeight;
+                roundSide = Math.max(1, Math.min(roundDisplayWidth * roundCrop.cropPw, roundDisplayHeight * roundCrop.cropPh));
+            }
+            roundCrop.cropPw = roundSide / roundDisplayWidth;
+            roundCrop.cropPh = roundSide / roundDisplayHeight;
+            int[] roundSize = fixVideoWidthHeight(Math.round(roundSide), Math.round(roundSide));
+            roundCrop.transformWidth = roundCrop.transformHeight = Math.max(roundSize[0], roundSize[1]);
+            videoEditedInfo.cropState = roundCrop;
+            final long roundTargetBytes = 9L * 1024 * 1024;
+            final int roundAudioBitrate = 128 * 1024;
+            final double roundDurSec = Math.max(1.0, videoEditedInfo.estimatedDuration / 1000.0);
+            int roundBitrate = (int) (roundTargetBytes * 8 / roundDurSec) - roundAudioBitrate;
+            roundBitrate = Math.max(500 * 1024, Math.min(14 * 1024 * 1024, roundBitrate));
+            videoEditedInfo.bitrate = roundBitrate;
+            videoEditedInfo.estimatedSize = Math.max(1, (long) (roundDurSec * (roundBitrate + roundAudioBitrate) / 8.0));
         }
         videoEditedInfo.muted = muteVideo || sendPhotoType == SELECT_TYPE_AVATAR;
         return videoEditedInfo;
@@ -15174,6 +15320,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         rotateItem.setVisibility(sendPhotoType != SELECT_TYPE_AVATAR ? View.GONE : View.VISIBLE);
                         mirrorItem.setVisibility(sendPhotoType != SELECT_TYPE_AVATAR ? View.GONE : View.VISIBLE);
                     }
+                    updateDeleteAfterSendButton();
                     if (animated) {
                         actionBar.beginDelayedTransition();
                     }
@@ -15351,6 +15498,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         }
         setCurrentCaption(newMessageObject, caption, captionTranslating, animateCaption);
+        updateDeleteAfterSendButton();
     }
 
     private void checkActionBarStyle() {
@@ -15375,6 +15523,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             actionBarBackButton.setStateListAnimator(null);
             actionBarBackButton.setBackground(actionBarBackButtonDrawableDeafult);
         }
+        updateDeleteAfterSendButton();
     }
 
     private void updateCaptionTranslated() {
@@ -20845,8 +20994,18 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         return false;
     }
 
+    private boolean isFlipPhotosDisabled() {
+        return MessagesController
+            .getGlobalMainSettings()
+            .getBoolean("disableFlipPhotos", false);
+    }
+
     @Override
     public boolean canDoubleTap(MotionEvent e) {
+        final boolean disableFlip = isFlipPhotosDisabled();
+        if (disableFlip && checkImageView.getVisibility() != View.VISIBLE) {
+            return true;
+        }
         if (checkImageView.getVisibility() != View.VISIBLE && !drawPressedDrawable[0] && !drawPressedDrawable[1]) {
             float x = e.getX();
             int side = Math.min(135, containerView.getMeasuredWidth() / 8);
@@ -20950,7 +21109,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         }
         float x = e.getX();
         float y = e.getY();
-        if (checkImageView.getVisibility() != View.VISIBLE) {
+        if (!isFlipPhotosDisabled() && checkImageView.getVisibility() != View.VISIBLE) {
             if (SharedConfig.nextMediaTap && sendPhotoType != SELECT_TYPE_STICKER && y > ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight + dp(40)) {
                 int side = Math.min(135, containerView.getMeasuredWidth() / 8);
                 if (x < side) {

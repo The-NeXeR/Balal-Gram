@@ -233,6 +233,7 @@ final class AudioCapture {
             encoder = AudioRecorderNative.create(
                     outputFile,
                     SAMPLE_RATE,
+                    org.telegram.messenger.MessagesController.getGlobalMainSettings().getInt("voiceQualityBitrate", -1),
                     prefixFile,
                     prefixStartMs,
                     prefixEndMs

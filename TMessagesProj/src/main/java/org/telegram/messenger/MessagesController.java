@@ -740,10 +740,10 @@ public class MessagesController extends BaseController implements NotificationCe
         return !starsLocked;
     }
     public boolean premiumFeaturesBlocked() {
-        return premiumLocked && !getUserConfig().isPremium();
+        return (premiumLocked || getGlobalMainSettings().getBoolean("lockPremium", false)) && !getUserConfig().isPremium();
     }
     public boolean premiumPurchaseBlocked() {
-        return premiumLocked;
+        return premiumLocked || getGlobalMainSettings().getBoolean("lockPremium", false);
     }
 
     public List<String> directPaymentsCurrency = new ArrayList<>();
@@ -1289,6 +1289,7 @@ public class MessagesController extends BaseController implements NotificationCe
         public ArrayList<TLRPC.Dialog> dialogs = new ArrayList<>();
         public ArrayList<TLRPC.Dialog> dialogsForward = new ArrayList<>();
         public int color;
+        public String emoticon;
         public boolean title_noanimate;
 
         public ArrayList<TL_chatlists.TL_exportedChatlistInvite> invites = null;
@@ -1702,6 +1703,11 @@ public class MessagesController extends BaseController implements NotificationCe
         verifyAgeMin = mainPreferences.getInt("verifyAgeMin", 18);
         premiumBotUsername = mainPreferences.getString("premiumBotUsername", null);
         premiumLocked = mainPreferences.getBoolean("premiumLocked", false);
+        AndroidUtilities.runOnUIThread(() -> {
+            if (getGlobalMainSettings().getBoolean("lockPremium", false)) {
+                premiumLocked = true;
+            }
+        }, 10);
         starsLocked = mainPreferences.getBoolean("starsLocked", true);
         transcribeButtonPressed = mainPreferences.getInt("transcribeButtonPressed", 0);
         forumUpgradeParticipantsMin = mainPreferences.getInt("forumUpgradeParticipantsMin", 200);
@@ -2853,8 +2859,9 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 case "premium_purchase_blocked": {
                     if (value.value instanceof TLRPC.TL_jsonBool) {
-                        if (premiumLocked != ((TLRPC.TL_jsonBool) value.value).value) {
-                            premiumLocked = ((TLRPC.TL_jsonBool) value.value).value;
+                        boolean locked = ((TLRPC.TL_jsonBool) value.value).value || getGlobalMainSettings().getBoolean("lockPremium", false);
+                        if (premiumLocked != locked) {
+                            premiumLocked = locked;
                             editor.putBoolean("premiumLocked", premiumLocked);
                             changed = true;
                         }

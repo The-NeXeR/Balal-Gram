@@ -53,6 +53,8 @@ import androidx.core.view.inputmethod.InputContentInfoCompat;
 
 import org.json.JSONObject;
 import org.telegram.messenger.audioinfo.AudioInfo;
+import org.telegram.messenger.balalgram.DeleteAfterSend;
+import org.telegram.messenger.balalgram.MediaSpoiler;
 import org.telegram.messenger.support.SparseLongArray;
 import org.telegram.messenger.utils.EphemeralMessagesHelper;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
@@ -649,6 +651,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         public boolean isLivePhoto;
         public boolean discardLivePhoto;
         public boolean canDeleteAfter;
+        public boolean deleteAfterSend;
+        public String deleteSourcePath;
+        public int sourceImageId;
         public boolean forceImage;
         public boolean updateStickersOrder;
         public boolean hasMediaSpoilers;
@@ -934,6 +939,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             if (type == 4) {
                 for (int a = 0; a < messageObjects.size(); a++) {
                     MessageObject obj = messageObjects.get(a);
+                    DeleteAfterSend.disarm(obj.messageOwner.params);
                     getMessagesStorage().markMessageAsSendError(obj.messageOwner, obj.scheduled ? 1 : 0);
                     obj.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                     obj.messageOwner.errorAllowedPriceStars = 0;
@@ -944,6 +950,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 }
                 delayedMessages.remove( "group_" + groupId);
             } else {
+                DeleteAfterSend.disarm(obj.messageOwner.params);
                 getMessagesStorage().markMessageAsSendError(obj.messageOwner, obj.scheduled ? 1 : 0);
                 obj.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                 obj.messageOwner.errorAllowedPriceStars = 0;
@@ -1510,6 +1517,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
     private void revertEditingMessageObject(MessageObject object) {
         object.cancelEditing = true;
+        object.editingMediaSpoiler = null;
         object.messageOwner.media = object.previousMedia;
         object.messageOwner.message = object.previousMessage;
         object.messageOwner.entities = object.previousMessageEntities;
@@ -1587,6 +1595,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         int topicId = 0;
         for (int c = 0; c < objects.size(); c++) {
             MessageObject object = objects.get(c);
+            DeleteAfterSend.disarm(object.messageOwner.params);
             if (object.scheduled) {
                 scheduled = true;
             }
@@ -2016,6 +2025,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 TLRPC.TL_messageService failed = new TLRPC.TL_messageService();
                 failed.id = oldId;
                 failed.dialog_id = dialogId;
+                DeleteAfterSend.disarm(object.messageOwner.params);
                 getMessagesStorage().markMessageAsSendError(failed, 0);
                 object.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                 object.forceUpdate = true;
@@ -2052,6 +2062,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             getMessagesStorage().putMessages(messages, true, false, false, 0, 0, 0);
             AndroidUtilities.runOnUIThread(() -> {
                 final int visibleId = object.getId();
+                DeleteAfterSend.onMessageSent(object.messageOwner.params, false);
                 object.messageOwner = sentMessage;
                 object.forceUpdate = true;
                 getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer,
@@ -2133,7 +2144,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         sendSticker(document, query, peer, caption, videoEditedInfo, replyToMsg, replyToTopMsg, storyItem, quote, sendAnimationData, notify, scheduleDate, scheduleRepeatPeriod, updateStickersOrder, parentObject, sendMessageChatArguments, stars, monoForumPeerId, suggestionParams, invertMedia, null);
     }
 
-    public void sendSticker(TLRPC.Document document, String query, long peer, CharSequence caption, VideoEditedInfo videoEditedInfo, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams, boolean invertMedia, String forkCaption) {
+    public void sendSticker(TLRPC.Document document, String query, long peer, CharSequence caption, VideoEditedInfo videoEditedInfo, MessageObject replyToMsg, MessageObject replyToTopMsg, TL_stories.StoryItem storyItem, ChatActivity.ReplyQuote quote, MessageObject.SendAnimationData sendAnimationData, boolean notify, int scheduleDate, int scheduleRepeatPeriod, boolean updateStickersOrder, Object parentObject, SendMessageChatArguments sendMessageChatArguments, long stars, long monoForumPeerId, MessageSuggestionParams suggestionParams, boolean invertMedia, String balalCaption) {
         if (document == null) {
             return;
         }
@@ -2247,14 +2258,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         ImageLoader.getInstance().putImageToCache(new BitmapDrawable(bitmapFinal[0]), keyFinal[0], false);
                     }
                     // secret chats re-upload the gif as a document; videoEditedInfo would turn it into a video that is converted from a missing local file
-                    SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, DialogObject.isEncryptedDialog(peer) ? null : videoEditedInfo, null, peer, replyToMsg, replyToTopMsg, forkCaption, null, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, false);
+                    SendMessageParams sendMessageParams = SendMessageParams.of((TLRPC.TL_document) finalDocument, DialogObject.isEncryptedDialog(peer) ? null : videoEditedInfo, null, peer, replyToMsg, replyToTopMsg, balalCaption, null, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, parentObject, sendAnimationData, false);
                     sendMessageParams.replyToStoryItem = storyItem;
                     sendMessageParams.replyQuote = quote;
                     sendMessageParams.sendMessageChatArguments = sendMessageChatArguments;
                     sendMessageParams.payStars = stars;
                     sendMessageParams.monoForumPeer = monoForumPeerId;
                     sendMessageParams.suggestionParams = suggestionParams;
-                    sendMessageParams.caption = caption != null ? caption.toString() : forkCaption;
+                    sendMessageParams.caption = caption != null ? caption.toString() : balalCaption;
                     sendMessageParams.invert_media = invertMedia;
                     sendMessage(sendMessageParams);
                 });
@@ -3366,14 +3377,20 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 if (type == 11) {
                     inputMedia = pollToAddOptionMessageObject.input_media;
                 } else if (type == 1) {
-                    if ((newMsg.media == null || newMsg.media instanceof TLRPC.TL_messageMediaEmpty || newMsg.media != null && newMsg.media.webpage instanceof TLRPC.TL_webPageEmpty) && !messageObject.editingMessageSearchWebPage) {
-                        inputMedia = new TLRPC.TL_inputMediaEmpty();
-                    } else if (newMsg != null && newMsg.media != null && newMsg.media.webpage != null) {
-                        TLRPC.TL_inputMediaWebPage inputWebpage = new TLRPC.TL_inputMediaWebPage();
-                        inputWebpage.url = newMsg.media.webpage.url;
-                        inputWebpage.force_small_media = newMsg.media.force_small_media;
-                        inputWebpage.force_large_media = newMsg.media.force_large_media;
-                        inputMedia = inputWebpage;
+                    if (messageObject.editingMediaSpoiler != null) {
+                        inputMedia = MediaSpoiler.inputMedia(messageObject, messageObject.editingMediaSpoiler);
+                        messageObject.editingMediaSpoiler = null;
+                    }
+                    if (inputMedia == null) {
+                        if ((newMsg.media == null || newMsg.media instanceof TLRPC.TL_messageMediaEmpty || newMsg.media != null && newMsg.media.webpage instanceof TLRPC.TL_webPageEmpty) && !messageObject.editingMessageSearchWebPage) {
+                            inputMedia = new TLRPC.TL_inputMediaEmpty();
+                        } else if (newMsg != null && newMsg.media != null && newMsg.media.webpage != null) {
+                            TLRPC.TL_inputMediaWebPage inputWebpage = new TLRPC.TL_inputMediaWebPage();
+                            inputWebpage.url = newMsg.media.webpage.url;
+                            inputWebpage.force_small_media = newMsg.media.force_small_media;
+                            inputWebpage.force_large_media = newMsg.media.force_large_media;
+                            inputMedia = inputWebpage;
+                        }
                     }
                 } else if (type == 2) {
                     TLRPC.TL_inputMediaUploadedPhoto uploadedPhoto = new TLRPC.TL_inputMediaUploadedPhoto();
@@ -6626,6 +6643,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         } catch (Exception e) {
             FileLog.e(e);
+            DeleteAfterSend.disarm(newMsg.params);
             getMessagesStorage().markMessageAsSendError(newMsg, scheduleDate != 0 ? 1 : 0);
             if (newMsgObj != null) {
                 newMsgObj.messageOwner.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
@@ -7868,6 +7886,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         if (!hasEmptyFile) {
                             for (int i = 0; i < msgObjs.size(); i++) {
                                 TLRPC.Message newMsgObj = msgObjs.get(i).messageOwner;
+                                DeleteAfterSend.disarm(newMsgObj.params);
                                 getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                                 newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                                 newMsgObj.errorAllowedPriceStars = 0;
@@ -8035,6 +8054,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorAllowedPriceStars = 0;
                             newMsgObj.errorNewPriceStars = 0;
+                            DeleteAfterSend.onMessageSent(newMsgObj.params, scheduled || currentSchedule);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, grouped_id, existFlags, currentSchedule);
                             getMessagesStorage().getStorageQueue().postRunnable(() -> {
@@ -8080,6 +8100,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     for (int i = 0; i < msgObjs.size(); i++) {
                         MessageObject msgObj = msgObjs.get(i);
                         TLRPC.Message newMsgObj = msgObj.messageOwner;
+                        DeleteAfterSend.disarm(newMsgObj.params);
                         getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                         newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                         if (!scheduled && error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
@@ -8566,6 +8587,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SENT;
                             newMsgObj.errorNewPriceStars = 0;
                             newMsgObj.errorAllowedPriceStars = 0;
+                            DeleteAfterSend.onMessageSent(newMsgObj.params, scheduled || currentSchedule);
                             if (scheduled != currentSchedule) {
                                 final boolean finalCurrentSchedule = currentSchedule;
                                 ArrayList<Integer> messageIds = new ArrayList<>();
@@ -8619,6 +8641,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         isSentError = true;
                     }
                     if (isSentError) {
+                        DeleteAfterSend.disarm(newMsgObj.params);
                         getMessagesStorage().markMessageAsSendError(newMsgObj, scheduled ? 1 : 0);
                         newMsgObj.send_state = MessageObject.MESSAGE_SEND_STATE_SEND_ERROR;
                         if (error != null && error.text != null && error.text.startsWith("ALLOW_PAYMENT_REQUIRED_")) {
@@ -10964,6 +10987,13 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (media.isEmpty()) {
             return;
         }
+        if (media.size() == 1 && editingMessageObject == null) {
+            SendingMediaInfo roundInfo = media.get(0);
+            if (roundInfo.isVideo && roundInfo.path != null && roundInfo.videoEditedInfo != null && roundInfo.videoEditedInfo.roundVideo) {
+                prepareSendingVideo(accountInstance, roundInfo.path, roundInfo.videoEditedInfo, roundInfo.coverPath, roundInfo.coverPhoto, dialogId, replyToMsg, replyToTopMsg, storyItem, quote, roundInfo.entities, roundInfo.ttl, editingMessageObject, notify, scheduleDate, scheduleRepeatPeriod, forceDocument, roundInfo.hasMediaSpoilers, roundInfo.caption, sendMessageChatArguments, effectId, payStars, monoForumPeerId, suggestionParams, invertMedia);
+                return;
+            }
+        }
         for (int a = 0, N = media.size(); a < N; a++) {
             if (media.get(a).ttl > 0) {
                 groupMedia = false;
@@ -11544,6 +11574,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             final TLRPC.PhotoSize coverFinal = cover;
                             if (originalPath != null) {
                                 params.put("originalPath", originalPath);
+                                if (info.deleteAfterSend && !info.isVideo && !isEncrypted && scheduleDate == 0) {
+                                    DeleteAfterSend.arm(params, info.deleteSourcePath, info.sourceImageId);
+                                }
                             }
                             if (info.isLivePhoto && !TextUtils.isEmpty(info.coverPath)) {
                                 params.put("imagePath", info.coverPath);
@@ -11762,6 +11795,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                 }
                                 if (originalPath != null) {
                                     params.put("originalPath", originalPath);
+                                    if (info.deleteAfterSend && !info.isVideo && !isEncrypted && scheduleDate == 0) {
+                                        DeleteAfterSend.arm(params, info.deleteSourcePath, info.sourceImageId);
+                                    }
                                 }
                                 if (parentFinal != null) {
                                     params.put("parentObject", parentFinal);

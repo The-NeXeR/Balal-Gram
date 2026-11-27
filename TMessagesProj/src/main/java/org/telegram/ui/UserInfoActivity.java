@@ -33,6 +33,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.balalgram.AccountOrder;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -254,6 +255,7 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
 
         super.createView(context);
         this.listView = super.listView;
+        listView.listenReorder(this::whenAccountsReordered);
         listView.setSections();
         listView.setSectionsDrawBackground(true);
         listView.setClipToPadding(false);
@@ -300,22 +302,16 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
 
     private final ArrayList<Integer> accountNumbers = new ArrayList<>();
     private void updateAccounts() {
-        accountNumbers.clear();
-        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-            if (UserConfig.getInstance(a).isClientActivated() && currentAccount != a) {
-                accountNumbers.add(a);
-            }
+        AccountOrder.collectAccountNumbers(accountNumbers, currentAccount);
+    }
+
+    private void whenAccountsReordered(int sectionId, ArrayList<UItem> items) {
+        final ArrayList<Integer> accounts = new ArrayList<>();
+        for (UItem item : items) {
+            accounts.add(item.intValue);
         }
-        Collections.sort(accountNumbers, (o1, o2) -> {
-            long l1 = UserConfig.getInstance(o1).loginTime;
-            long l2 = UserConfig.getInstance(o2).loginTime;
-            if (l1 > l2) {
-                return 1;
-            } else if (l1 < l2) {
-                return -1;
-            }
-            return 0;
-        });
+        AccountOrder.save(accounts);
+        updateAccounts();
     }
 
     @Keep
@@ -428,9 +424,11 @@ public class UserInfoActivity extends UniversalFragment implements NotificationC
             if (!hasAddAccount) {
                 items.add(UItem.asHeader(getString(R.string.SettingsAccounts)));
             }
-            for (int i = 0; i < accountNumbers.size(); ++i) {
-                items.add(SettingsActivity.AccountCell.Factory.of(i, accountNumbers.get(i)));
+            adapter.reorderSectionStart();
+            for (int account : accountNumbers) {
+                items.add(SettingsActivity.AccountCell.Factory.of(account, account, accountNumbers.size() > 1));
             }
+            adapter.reorderSectionEnd();
             if (!UserConfig.hasPremiumOnAccounts()) {
                 final int moreAccounts = Math.max(0, UserConfig.getMaxAccountCount() - UserConfig.getActivatedAccountsCount());
                 items.add(UItem.asShadow(
